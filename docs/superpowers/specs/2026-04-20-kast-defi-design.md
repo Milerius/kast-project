@@ -132,7 +132,7 @@ Each decision section lists alternatives considered and the reason for the chose
 **Chosen**: A hand-rolled pure state machine (state enum + transition table), framework-agnostic.
 
 **Alternatives considered**:
-- **XState** — more formal, but 100+ KB of machinery for a 9-state FSM with 9 transitions. Overkill.
+- **XState** — more formal, but 100+ KB of machinery for a 6-state FSM with 11 transitions. Overkill.
 - **No FSM, just imperative calls from the UI** — rejected because (a) TDD/BDD becomes harder: scenarios want to talk about states and transitions; (b) property tests need an invariant target; (c) button enable/disable logic becomes scattered across components.
 
 A pure FSM is the cheapest abstraction that unlocks clean tests and clean UI. Lives in its own package so it is reusable (CLI, tests, another UI) and has zero React dependency.
@@ -218,37 +218,37 @@ export interface MayanAdapter {
   // `[approve, bridge]` because Mayan pulls USDC via `transferFrom`;
   // the Solana side is a single versioned tx (SPL approve is done inline).
   buildBridgeTx(quote: Quote): Promise<
-    | { chain: 'solana'; txs: [VersionedTransaction] }
-    | { chain: 'base'; txs: [EvmTransactionRequest, EvmTransactionRequest] }
+    | { chain: 'solana'; txs: [VersionedTransaction]; orderHash: string }
+    | { chain: 'base'; txs: [EvmTransactionRequest, EvmTransactionRequest]; orderHash: string }
   >;
 
   // `orderHash` is produced by the SDK at tx-build time (not from RPC
-  // confirmation) and must be persisted before the tx is submitted —
-  // otherwise a page refresh between submit and settle loses the order.
+  // confirmation) and is returned *alongside* the txs so the caller can
+  // persist it before submitting. A page refresh between submit and
+  // settle then still finds the order in localStorage.
   getOrderStatus(orderHash: string): Promise<'PENDING' | 'SETTLED' | 'REFUNDED'>;
 }
 ```
 
 ### `packages/orchestrator`
 
+The state set is deliberately minimised to **observable** states — every state is uniquely determined by the tuple (`obligation`, `baseUsdc`, `pendingOrders`). States that would have identical on-chain projections (e.g. "just deposited" vs "just repaid, about to withdraw") are merged; the UI layer uses a separate lightweight `userIntent` hint (not part of the FSM) to decide which button to foreground.
+
 ```ts
 export type PositionState =
-  | 'IDLE'
-  | 'DEPOSITED'
-  | 'BORROWED'
-  | 'BRIDGING_OUT'
-  | 'ACTIVE_ON_BASE'
-  | 'BRIDGING_BACK'
-  | 'ON_SOL'
-  | 'WITHDRAWING'
-  | 'CLOSED';
+  | 'IDLE'            // no open obligation OR obligation exists with zero collateral & zero debt
+  | 'DEPOSITED'       // collateral > 0, borrowed == 0
+  | 'BORROWED'        // collateral > 0, borrowed > 0, no pending order, base USDC == 0
+  | 'BRIDGING_OUT'    // pending order, direction 'out'
+  | 'ACTIVE_ON_BASE'  // collateral > 0, borrowed > 0, base USDC > 0, no pending order
+  | 'BRIDGING_BACK';  // pending order, direction 'back'
 
 export type Event =
   | { type: 'DEPOSIT'; lamports: bigint }
   | { type: 'BORROW'; amountUsdc: bigint }
   | { type: 'BRIDGE_OUT'; amountUsdc: bigint; orderHash: string }
   | { type: 'BRIDGE_SETTLED' }
-  | { type: 'BRIDGE_REFUND' }        // Mayan returned REFUNDED; unwind to prev chain
+  | { type: 'BRIDGE_REFUND' }        // Mayan returned REFUNDED; USDC back on source chain
   | { type: 'BRIDGE_BACK'; amountUsdc: bigint; orderHash: string }
   | { type: 'REPAY'; amount: bigint | 'all' }
   | { type: 'WITHDRAW'; lamports: bigint | 'all' };
@@ -258,15 +258,33 @@ export function canFire(state: PositionState, event: Event['type']): boolean;
 
 // Re-derives position state from chain + client-persisted in-flight orders.
 // The adapter returns the live obligation (authoritative for debt/collateral);
-// `pendingOrders` come from localStorage (§8.2) and drive the BRIDGING_* states.
+// `pendingOrders` come from localStorage key `kast:pendingOrders` (§8.2).
 export function derivePositionFromChain(args: {
-  obligation: Obligation | null;
-  baseUsdc: bigint;
-  pendingOrders: PersistedOrder[];
+  obligation: Obligation | null;  // null = never opened
+  baseUsdc: bigint;                // USDC balance on the Base wallet
+  pendingOrders: PersistedOrder[]; // non-terminal Mayan orders from localStorage
 }): PositionState;
 ```
 
-`BRIDGE_REFUND` transitions `BRIDGING_OUT → BORROWED` (USDC returned to Solana) and `BRIDGING_BACK → ACTIVE_ON_BASE` (USDC returned to Base). Property tests assert no refund path can reach `CLOSED` with non-zero debt.
+**Transitions** (11 total):
+
+| From | Event | To |
+|---|---|---|
+| IDLE | DEPOSIT | DEPOSITED |
+| DEPOSITED | BORROW | BORROWED |
+| DEPOSITED | WITHDRAW | IDLE |
+| BORROWED | BRIDGE_OUT | BRIDGING_OUT |
+| BORROWED | REPAY(partial) | BORROWED (self-loop) |
+| BORROWED | REPAY('all') | DEPOSITED |
+| BRIDGING_OUT | BRIDGE_SETTLED | ACTIVE_ON_BASE |
+| BRIDGING_OUT | BRIDGE_REFUND | BORROWED |
+| ACTIVE_ON_BASE | BRIDGE_BACK | BRIDGING_BACK |
+| BRIDGING_BACK | BRIDGE_SETTLED | BORROWED |
+| BRIDGING_BACK | BRIDGE_REFUND | ACTIVE_ON_BASE |
+
+Full close path: `BRIDGING_BACK → BORROWED → DEPOSITED → IDLE` (three confirmations: bridge settle, repay, withdraw).
+
+Property tests assert no refund/repay sequence can reach a state where `obligation.borrowed > 0 && state == IDLE`, and that `BRIDGE_REFUND` inverts the matching outbound event (see ARCHITECTURE §3).
 
 ## 7. Data Flow
 
@@ -288,19 +306,22 @@ Amounts below are written as variables (`L_collateral` = lamports equivalent to 
 
 5. User enters repayment amount `N_repay` (defaults to "Max" = Kamino's repay-all flag) and clicks **Close**. Partial repayments use a literal bigint; full uses `'all'`.
 6. `mayanAdapter.quote({ fromChain: 'base', toChain: 'solana', amountUsdc: N_repay, fromAddress: baseAddress, toAddress: solAddress })`.
-7. `mayanAdapter.buildBridgeTx(quote)` → returns `{ chain: 'base', txs: [approveTx, bridgeTx] }` and `orderHash`. Persist order to localStorage. Base wallet must hold enough **ETH** to pay gas for both txs (see §8.3). UI sends `approveTx`, waits for confirmation, then sends `bridgeTx`. FSM: `ACTIVE_ON_BASE → BRIDGING_BACK`.
-8. Poll `getOrderStatus` → `SETTLED` → FSM `ON_SOL`. USDC arrives in Solana ATA (amount may be slightly less than sent due to Mayan fees).
+7. `mayanAdapter.buildBridgeTx(quote)` → returns `{ chain: 'base', txs: [approveTx, bridgeTx], orderHash }`. **Persist the order** to `kast:pendingOrders` before signing. Base wallet must hold enough **ETH** to pay gas for both txs (see §8.3). UI sends `approveTx`, waits for confirmation, then sends `bridgeTx`. FSM: `ACTIVE_ON_BASE → BRIDGING_BACK`.
+8. Poll `getOrderStatus` → `SETTLED` → FSM `BRIDGING_BACK → BORROWED`. USDC arrives in Solana ATA (amount may be slightly less than sent due to Mayan fees).
 9. UI re-reads `getObligation` for current live `borrowed` (debt has accrued since step 3).
 10. `buildRepayTx({ owner, amount: 'all' })` if full close, or `buildRepayTx({ owner, amount: N_repay })` for partial. Sign → submit → confirm.
-11. If full: `buildWithdrawCollateralTx({ owner, lamports: 'all' })` → sign → submit → confirm → FSM `CLOSED`, localStorage orders cleared.
-12. If partial: FSM stays `ON_SOL` with reduced debt; UI shows updated obligation.
+    - Full: FSM `BORROWED → DEPOSITED`.
+    - Partial: FSM self-loop `BORROWED → BORROWED` with reduced debt.
+11. If full: `buildWithdrawCollateralTx({ owner, lamports: 'all' })` → sign → submit → confirm → FSM `DEPOSITED → IDLE`. localStorage cleared of any residual orders.
 
 ### 7.3 Refresh / recovery
 
 On page load, the UI:
-1. reads `obligation` + Base USDC balance + `localStorage.pendingOrders`,
-2. calls `derivePositionFromChain({ obligation, baseUsdc, pendingOrders })` to compute current FSM state,
-3. resumes polling any non-terminal orders, unpersisting them on `SETTLED`/`REFUNDED`.
+1. reads `obligation` + Base USDC balance + the `kast:pendingOrders` array from localStorage,
+2. calls `derivePositionFromChain({ obligation, baseUsdc, pendingOrders })` to compute the current FSM state,
+3. resumes polling any non-terminal orders, removing entries on `SETTLED`/`REFUNDED`.
+
+Because the six states are each uniquely determined by the derivation inputs, the FSM state after refresh matches what it was before refresh — no intent field, no server coordination, no ambiguity.
 
 ## 8. Runtime Details
 
@@ -349,7 +370,7 @@ Writes: before submitting any Mayan bridge tx. Reads: on mount, and after every 
 ## 9. Testing Strategy
 
 - **Unit** (`packages/*/src/**/*.test.ts`, Vitest) — orchestrator transitions, amount conversions, parsers.
-- **Property** (`packages/verify/`, Vitest + fast-check) — FSM invariants (e.g., `CLOSED ⇒ borrowed == 0`), arithmetic roundtrips, monotonicity of health factor under repay.
+- **Property** (`packages/verify/`, Vitest + fast-check) — FSM invariants (e.g., `IDLE ⇒ borrowed == 0 && collateral == 0`), arithmetic roundtrips, monotonicity of health factor under repay.
 - **BDD / scenario** (`scenario-tests/features/*.feature`, @cucumber/cucumber) — Gherkin flows; two binaries: `orchestrator/` (in-memory, fast, every push) and `live/` (mainnet, scheduled).
 - **Integration** (`integration-tests/`, Vitest) — live mainnet RPC, throwaway keypair, runs on PR label.
 - **Docker smoke** (`docker/`, Playwright) — container boots, page renders, Privy login click works.
@@ -388,7 +409,7 @@ Per the assignment brief:
 Explicitly deferred, ordered by impact / effort. These live in `docs/PROGRESS.md` as a living checklist during implementation.
 
 ### 12.1 Collateral adjustments (bonus #3)
-Add and withdraw collateral on an open position without closing it. Kamino adapter functions already in scope; requires UI affordances and two new FSM self-loops from `BORROWED` / `ACTIVE_ON_BASE` / `ON_SOL`. Estimated 60–90 min. Tracked in `docs/PROGRESS.md`.
+Add and withdraw collateral on an open position without closing it. Kamino adapter functions already in scope; requires UI affordances and two new FSM self-loops on `DEPOSITED` and `BORROWED` (add/withdraw collateral keeping existing debt state). Estimated 60–90 min. Tracked in `docs/PROGRESS.md`.
 
 ### 12.2 Production error handling
 Structured error taxonomy (RPC error, user-rejected, insufficient balance, bridge timeout, oracle stale), user-visible messages, opt-in retry with exponential backoff for idempotent calls only.

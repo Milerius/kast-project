@@ -97,42 +97,47 @@ Adapters are pure Node packages — no React, no browser APIs. The UI is the onl
 
 ## 3. Position State Machine
 
+Six **observable** states — each uniquely determined by `(obligation, baseUsdc, pendingOrders)`. No hidden "intent" substates: full-close and partial-repay share the same FSM path (`BORROWED` ← repay ← `BORROWED` for partial; `DEPOSITED` ← repay('all') ← `BORROWED` for full).
+
 ```mermaid
 stateDiagram-v2
     [*] --> IDLE
 
     IDLE --> DEPOSITED: DEPOSIT(L_collateral)
     DEPOSITED --> BORROWED: BORROW(N_borrow)
+    DEPOSITED --> IDLE: WITHDRAW('all')
+
     BORROWED --> BRIDGING_OUT: BRIDGE_OUT(N_borrow, orderHash)
+    BORROWED --> BORROWED: REPAY(partial)
+    BORROWED --> DEPOSITED: REPAY('all')
+
     BRIDGING_OUT --> ACTIVE_ON_BASE: BRIDGE_SETTLED
     BRIDGING_OUT --> BORROWED: BRIDGE_REFUND
 
     ACTIVE_ON_BASE --> BRIDGING_BACK: BRIDGE_BACK(N_repay, orderHash)
-    BRIDGING_BACK --> ON_SOL: BRIDGE_SETTLED
+    BRIDGING_BACK --> BORROWED: BRIDGE_SETTLED
     BRIDGING_BACK --> ACTIVE_ON_BASE: BRIDGE_REFUND
 
-    ON_SOL --> ON_SOL: REPAY(partial)
-    ON_SOL --> WITHDRAWING: REPAY('all')
-
-    WITHDRAWING --> CLOSED: WITHDRAW('all')
-    CLOSED --> [*]
-
-    note right of ON_SOL
+    note right of BORROWED
       'all' triggers Kamino's
       repay-all path; partial
-      is a self-loop.
+      is a self-loop with
+      reduced debt.
     end note
 ```
 
+Full close path: `BRIDGING_BACK → BORROWED → DEPOSITED → IDLE` (three confirmations: bridge settle, repay-all, withdraw-all).
+
 **Invariants verified by property tests** (`packages/verify/`):
 
-- No path (including any sequence of `BRIDGE_REFUND` events) reaches `CLOSED` with `obligation.borrowed > 0`.
-- No path reaches `CLOSED` with `obligation.collateral > 0`.
+- No sequence of events reaches `IDLE` with `obligation.borrowed > 0` or `obligation.collateral > 0`.
 - `transition(s, e)` is deterministic and total for all legal `(s, e)` pairs.
 - `canFire(s, e)` is true iff `transition(s, e)` would not throw.
 - Amount round-trips: `lamportsToSol(solToLamports(x)) == x` for valid `x`.
 - Repay is monotonic *at tx-submit time*: `borrowed_after_repay ≤ borrowed_before_repay` (live accrual means strict inequality can hold even for a no-op build).
-- `BRIDGE_REFUND` is an inverse: `transition(transition(s, BRIDGE_OUT), BRIDGE_REFUND) == s` for `s ∈ {BORROWED, ACTIVE_ON_BASE}`.
+- `BRIDGE_REFUND` inverts the matching outbound event:
+  - `transition(transition(BORROWED, BRIDGE_OUT), BRIDGE_REFUND) == BORROWED`
+  - `transition(transition(ACTIVE_ON_BASE, BRIDGE_BACK), BRIDGE_REFUND) == ACTIVE_ON_BASE`
 
 ---
 
@@ -251,7 +256,7 @@ sequenceDiagram
     alt SETTLED
         UI->>LS: delete order
         UI->>O: transition(BRIDGING_BACK, BRIDGE_SETTLED)
-        O-->>UI: ON_SOL
+        O-->>UI: BORROWED
     else REFUNDED
         UI->>LS: delete order
         UI->>O: transition(BRIDGING_BACK, BRIDGE_REFUND)
@@ -270,24 +275,24 @@ sequenceDiagram
         UI->>P: sign + send
         P->>SOL: submit
         SOL-->>UI: confirmed
-        UI->>O: transition(ON_SOL, REPAY('all'))
-        O-->>UI: WITHDRAWING
+        UI->>O: transition(BORROWED, REPAY('all'))
+        O-->>UI: DEPOSITED
 
         UI->>K: buildWithdrawCollateralTx(solAddr, 'all')
         K-->>UI: [tx]
         UI->>P: sign + send
         P->>SOL: submit
         SOL-->>UI: confirmed
-        UI->>O: transition(WITHDRAWING, WITHDRAW)
-        O-->>UI: CLOSED
+        UI->>O: transition(DEPOSITED, WITHDRAW('all'))
+        O-->>UI: IDLE
     else partial close
         UI->>K: buildRepayTx(solAddr, N_repay)
         K-->>UI: [tx]
         UI->>P: sign + send
         P->>SOL: submit
         SOL-->>UI: confirmed
-        UI->>O: transition(ON_SOL, REPAY(partial))
-        O-->>UI: ON_SOL (residual debt)
+        UI->>O: transition(BORROWED, REPAY(partial))
+        O-->>UI: BORROWED (residual debt)
     end
 ```
 
