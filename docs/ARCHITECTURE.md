@@ -187,11 +187,11 @@ sequenceDiagram
     O-->>UI: BORROWED
 
     UI->>M: quote(sol→base, N_borrow, solAddr, baseAddr)
-    M-->>UI: Quote{expiresAt, orderHash}
-    Note over UI,M: orderHash known at quote-build time<br/>(from Mayan SDK, not from RPC)
-    UI->>LS: persist {orderHash, direction:'out', N_borrow}
+    M-->>UI: Quote{expiresAt}
     UI->>M: buildBridgeTx(quote)
-    M-->>UI: {chain:'solana', txs:[tx]}
+    M-->>UI: {chain:'solana', txs:[tx], orderHash}
+    Note over UI,M: orderHash returned by SDK at tx-build time<br/>(not from RPC confirmation)
+    UI->>LS: persist {orderHash, direction:'out', N_borrow}
     UI->>P: sign + send
     P->>SOL: submit
     SOL-->>UI: confirmed signature
@@ -235,10 +235,10 @@ sequenceDiagram
     Note over UI,BASE: Pre-flight: check baseWallet ETH ≥ gas threshold<br/>else render "Fund Base wallet" prompt
 
     UI->>M: quote(base→sol, N_repay, baseAddr, solAddr)
-    M-->>UI: Quote{expiresAt, orderHash}
-    UI->>LS: persist {orderHash, direction:'back', N_repay}
+    M-->>UI: Quote{expiresAt}
     UI->>M: buildBridgeTx(quote)
-    M-->>UI: {chain:'base', txs:[approveTx, bridgeTx]}
+    M-->>UI: {chain:'base', txs:[approveTx, bridgeTx], orderHash}
+    UI->>LS: persist {orderHash, direction:'back', N_repay}
 
     UI->>P: sign approveTx
     P->>BASE: submit
