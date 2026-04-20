@@ -1,6 +1,11 @@
 # Architecture
 
-Visual reference for the KAST DeFi project. Design decisions live in the RFC at `docs/superpowers/specs/2026-04-20-kast-defi-design.md`; this document focuses on **what things are**, **how they connect**, and **how data flows**.
+Visual reference for the KAST DeFi project. Design decisions, **non-goals, and future improvements live in the RFC** at `docs/superpowers/specs/2026-04-20-kast-defi-design.md` (§3 and §12 respectively); this document focuses on **what things are**, **how they connect**, and **how data flows**.
+
+Amount placeholders used in diagrams:
+- `L_collateral` — lamports equivalent to $20 SOL at mount time (not hardcoded)
+- `N_borrow` — `5_000_000` USDC base units (5 USDC with 6 decimals)
+- `N_repay` — user-entered partial amount or `'all'` for full close
 
 ---
 
@@ -96,35 +101,38 @@ Adapters are pure Node packages — no React, no browser APIs. The UI is the onl
 stateDiagram-v2
     [*] --> IDLE
 
-    IDLE --> DEPOSITED: DEPOSIT(lamports)
-    DEPOSITED --> BORROWED: BORROW(amountUsdc)
-    BORROWED --> BRIDGING_OUT: BRIDGE_OUT(amountUsdc)
+    IDLE --> DEPOSITED: DEPOSIT(L_collateral)
+    DEPOSITED --> BORROWED: BORROW(N_borrow)
+    BORROWED --> BRIDGING_OUT: BRIDGE_OUT(N_borrow, orderHash)
     BRIDGING_OUT --> ACTIVE_ON_BASE: BRIDGE_SETTLED
+    BRIDGING_OUT --> BORROWED: BRIDGE_REFUND
 
-    ACTIVE_ON_BASE --> BRIDGING_BACK: BRIDGE_BACK(amountUsdc)
+    ACTIVE_ON_BASE --> BRIDGING_BACK: BRIDGE_BACK(N_repay, orderHash)
     BRIDGING_BACK --> ON_SOL: BRIDGE_SETTLED
+    BRIDGING_BACK --> ACTIVE_ON_BASE: BRIDGE_REFUND
 
     ON_SOL --> ON_SOL: REPAY(partial)
-    ON_SOL --> WITHDRAWING: REPAY(full)
+    ON_SOL --> WITHDRAWING: REPAY('all')
 
-    WITHDRAWING --> CLOSED: WITHDRAW(allLamports)
+    WITHDRAWING --> CLOSED: WITHDRAW('all')
     CLOSED --> [*]
 
     note right of ON_SOL
-      Partial repayment is a
-      self-loop; state advances
-      only when borrowed == 0.
+      'all' triggers Kamino's
+      repay-all path; partial
+      is a self-loop.
     end note
 ```
 
 **Invariants verified by property tests** (`packages/verify/`):
 
-- No path reaches `CLOSED` with `obligation.borrowed > 0`.
+- No path (including any sequence of `BRIDGE_REFUND` events) reaches `CLOSED` with `obligation.borrowed > 0`.
 - No path reaches `CLOSED` with `obligation.collateral > 0`.
 - `transition(s, e)` is deterministic and total for all legal `(s, e)` pairs.
 - `canFire(s, e)` is true iff `transition(s, e)` would not throw.
 - Amount round-trips: `lamportsToSol(solToLamports(x)) == x` for valid `x`.
-- Repay is monotonic: `borrowed_after_repay ≤ borrowed_before_repay`.
+- Repay is monotonic *at tx-submit time*: `borrowed_after_repay ≤ borrowed_before_repay` (live accrual means strict inequality can hold even for a no-op build).
+- `BRIDGE_REFUND` is an inverse: `transition(transition(s, BRIDGE_OUT), BRIDGE_REFUND) == s` for `s ∈ {BORROWED, ACTIVE_ON_BASE}`.
 
 ---
 
@@ -134,6 +142,7 @@ stateDiagram-v2
 sequenceDiagram
     actor User
     participant UI as apps/web
+    participant LS as localStorage
     participant P as Privy
     participant O as orchestrator
     participant K as kamino-adapter
@@ -142,51 +151,63 @@ sequenceDiagram
     participant BASE as Base RPC
 
     User->>P: Login
-    P-->>UI: solAddr, baseAddr
+    P-->>UI: wallet handles (solWallet, baseWallet)
+    UI->>UI: solAddr = solWallet.address, baseAddr = baseWallet.address
 
     UI->>K: getObligation(solAddr)
     K->>SOL: fetch obligation account
     SOL-->>K: obligation | null
     K-->>UI: obligation | null
-    UI->>O: derivePositionFromChain(...)
+    UI->>LS: read pendingOrders
+    LS-->>UI: [] (first visit)
+    UI->>O: derivePositionFromChain({obligation, baseUsdc, pendingOrders})
     O-->>UI: IDLE
 
     User->>UI: click Open
-    UI->>K: buildDepositCollateralTx(0.12 SOL)
-    K-->>UI: unsigned tx
-    UI->>P: sign + send
-    P->>SOL: submit
+    UI->>K: buildDepositCollateralTx(solAddr, L_collateral)
+    K-->>UI: [tx1] (inlines ATA + WSOL)
+    UI->>P: sign tx1
+    P-->>UI: signed tx1
+    UI->>SOL: submit
     SOL-->>UI: confirmed signature
     UI->>O: transition(IDLE, DEPOSIT)
     O-->>UI: DEPOSITED
 
-    UI->>K: buildBorrowTx(5 USDC)
-    K-->>UI: unsigned tx
+    UI->>K: buildBorrowTx(solAddr, N_borrow)
+    K-->>UI: [tx]
     UI->>P: sign + send
     P->>SOL: submit
     SOL-->>UI: confirmed signature
     UI->>O: transition(DEPOSITED, BORROW)
     O-->>UI: BORROWED
 
-    UI->>M: quote(sol→base, 5 USDC)
-    M-->>UI: Quote
+    UI->>M: quote(sol→base, N_borrow, solAddr, baseAddr)
+    M-->>UI: Quote{expiresAt, orderHash}
+    Note over UI,M: orderHash known at quote-build time<br/>(from Mayan SDK, not from RPC)
+    UI->>LS: persist {orderHash, direction:'out', N_borrow}
     UI->>M: buildBridgeTx(quote)
-    M-->>UI: unsigned tx
+    M-->>UI: {chain:'solana', txs:[tx]}
     UI->>P: sign + send
     P->>SOL: submit
-    SOL-->>UI: signature + orderHash
+    SOL-->>UI: confirmed signature
     UI->>O: transition(BORROWED, BRIDGE_OUT)
     O-->>UI: BRIDGING_OUT
 
-    loop poll until SETTLED
+    loop poll every ~3s until terminal
         UI->>M: getOrderStatus(orderHash)
-        M-->>UI: PENDING | SETTLED
+        M-->>UI: PENDING | SETTLED | REFUNDED
     end
-    UI->>O: transition(BRIDGING_OUT, BRIDGE_SETTLED)
-    O-->>UI: ACTIVE_ON_BASE
-
-    UI->>BASE: read USDC balance(baseAddr)
-    BASE-->>UI: 5 USDC
+    alt SETTLED
+        UI->>LS: delete order
+        UI->>O: transition(BRIDGING_OUT, BRIDGE_SETTLED)
+        O-->>UI: ACTIVE_ON_BASE
+        UI->>BASE: read USDC balance(baseAddr)
+        BASE-->>UI: ~N_borrow minus Mayan fees
+    else REFUNDED
+        UI->>LS: delete order
+        UI->>O: transition(BRIDGING_OUT, BRIDGE_REFUND)
+        O-->>UI: BORROWED (USDC back on Solana, user may retry)
+    end
 ```
 
 ---
@@ -197,6 +218,7 @@ sequenceDiagram
 sequenceDiagram
     actor User
     participant UI as apps/web
+    participant LS as localStorage
     participant P as Privy
     participant O as orchestrator
     participant K as kamino-adapter
@@ -204,41 +226,67 @@ sequenceDiagram
     participant SOL as Solana RPC
     participant BASE as Base RPC
 
-    User->>UI: click Close (or enter partial amount)
-    UI->>M: quote(base→sol, N USDC)
-    M-->>UI: Quote
+    User->>UI: click Close (or enter partial N_repay)
+    Note over UI,BASE: Pre-flight: check baseWallet ETH ≥ gas threshold<br/>else render "Fund Base wallet" prompt
+
+    UI->>M: quote(base→sol, N_repay, baseAddr, solAddr)
+    M-->>UI: Quote{expiresAt, orderHash}
+    UI->>LS: persist {orderHash, direction:'back', N_repay}
     UI->>M: buildBridgeTx(quote)
-    M-->>UI: unsigned evm tx
-    UI->>P: sign + send (EVM)
+    M-->>UI: {chain:'base', txs:[approveTx, bridgeTx]}
+
+    UI->>P: sign approveTx
     P->>BASE: submit
-    BASE-->>UI: tx hash + orderHash
+    BASE-->>UI: approve confirmed
+    UI->>P: sign bridgeTx
+    P->>BASE: submit
+    BASE-->>UI: bridge tx confirmed
     UI->>O: transition(ACTIVE_ON_BASE, BRIDGE_BACK)
     O-->>UI: BRIDGING_BACK
 
-    loop poll until SETTLED
+    loop poll every ~3s until terminal
         UI->>M: getOrderStatus(orderHash)
-        M-->>UI: PENDING | SETTLED
+        M-->>UI: PENDING | SETTLED | REFUNDED
     end
-    UI->>O: transition(BRIDGING_BACK, BRIDGE_SETTLED)
-    O-->>UI: ON_SOL
+    alt SETTLED
+        UI->>LS: delete order
+        UI->>O: transition(BRIDGING_BACK, BRIDGE_SETTLED)
+        O-->>UI: ON_SOL
+    else REFUNDED
+        UI->>LS: delete order
+        UI->>O: transition(BRIDGING_BACK, BRIDGE_REFUND)
+        O-->>UI: ACTIVE_ON_BASE (user retries)
+    end
 
-    UI->>K: buildRepayTx(N)
-    K-->>UI: unsigned tx
-    UI->>P: sign + send
-    P->>SOL: submit
-    SOL-->>UI: confirmed signature
+    UI->>K: getObligation(solAddr)
+    K->>SOL: fetch live obligation
+    SOL-->>K: { borrowed: B_live, ... }
+    K-->>UI: B_live (accrued since borrow)
 
-    UI->>O: transition(ON_SOL, REPAY(N))
-    alt N == borrowed (full)
-        O-->>UI: WITHDRAWING
-        UI->>K: buildWithdrawCollateralTx(allLamports)
-        K-->>UI: unsigned tx
+    alt full close
+        UI->>K: buildRepayTx(solAddr, 'all')
+        Note over K: 'all' → Kamino repay-all flag,<br/>safe across interest accrual
+        K-->>UI: [tx]
         UI->>P: sign + send
         P->>SOL: submit
-        SOL-->>UI: confirmed signature
+        SOL-->>UI: confirmed
+        UI->>O: transition(ON_SOL, REPAY('all'))
+        O-->>UI: WITHDRAWING
+
+        UI->>K: buildWithdrawCollateralTx(solAddr, 'all')
+        K-->>UI: [tx]
+        UI->>P: sign + send
+        P->>SOL: submit
+        SOL-->>UI: confirmed
         UI->>O: transition(WITHDRAWING, WITHDRAW)
         O-->>UI: CLOSED
-    else N < borrowed (partial)
+    else partial close
+        UI->>K: buildRepayTx(solAddr, N_repay)
+        K-->>UI: [tx]
+        UI->>P: sign + send
+        P->>SOL: submit
+        SOL-->>UI: confirmed
+        UI->>O: transition(ON_SOL, REPAY(partial))
         O-->>UI: ON_SOL (residual debt)
     end
 ```
@@ -287,7 +335,7 @@ graph LR
     merge[merge to main] --> gha2[ci.yml + smoke.yml]
     gha2 -->|pass| prod[Vercel production]
 
-    prod --> env[(Vercel env:<br/>PRIVY_APP_ID<br/>SOLANA_RPC_URL<br/>BASE_RPC_URL)]
+    prod --> env[(Vercel env:<br/>NEXT_PUBLIC_PRIVY_APP_ID<br/>NEXT_PUBLIC_SOLANA_RPC_URL<br/>NEXT_PUBLIC_BASE_RPC_URL<br/>NEXT_PUBLIC_MAYAN_REFERRER)]
 ```
 
 ---
