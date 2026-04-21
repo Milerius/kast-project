@@ -1,0 +1,11 @@
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports: ['3000:3000']
+    environment:
+      NEXT_PUBLIC_PRIVY_APP_ID: ${NEXT_PUBLIC_PRIVY_APP_ID:-smoke-placeholder}
+      NEXT_PUBLIC_SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+      NEXT_PUBLIC_BASE_RPC_URL: https://mainnet.base.org
+      NEXT_PUBLIC_KAMINO_MARKET: 7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF
