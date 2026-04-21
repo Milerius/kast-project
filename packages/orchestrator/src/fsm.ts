@@ -23,8 +23,20 @@ export class IllegalTransitionError extends Error {
   }
 }
 
-export function transition(_state: PositionState, _event: Event): PositionState {
-  throw new Error('not implemented');
+export function transition(state: PositionState, event: Event): PositionState {
+  switch (state) {
+    case 'IDLE':
+      if (event.type === 'DEPOSIT') return 'DEPOSITED';
+      break;
+    case 'DEPOSITED':
+      if (event.type === 'BORROW') return 'BORROWED';
+      if (event.type === 'WITHDRAW') return 'IDLE';
+      break;
+    case 'BORROWED':
+      if (event.type === 'REPAY') return event.amount === 'all' ? 'DEPOSITED' : 'BORROWED';
+      break;
+  }
+  throw new IllegalTransitionError(state, event.type);
 }
 
 export function canFire(_state: PositionState, _event: Event['type']): boolean {
