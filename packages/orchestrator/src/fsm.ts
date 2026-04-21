@@ -34,6 +34,18 @@ export function transition(state: PositionState, event: Event): PositionState {
       break;
     case 'BORROWED':
       if (event.type === 'REPAY') return event.amount === 'all' ? 'DEPOSITED' : 'BORROWED';
+      if (event.type === 'BRIDGE_OUT') return 'BRIDGING_OUT';
+      break;
+    case 'BRIDGING_OUT':
+      if (event.type === 'BRIDGE_SETTLED') return 'ACTIVE_ON_BASE';
+      if (event.type === 'BRIDGE_REFUND') return 'BORROWED';
+      break;
+    case 'ACTIVE_ON_BASE':
+      if (event.type === 'BRIDGE_BACK') return 'BRIDGING_BACK';
+      break;
+    case 'BRIDGING_BACK':
+      if (event.type === 'BRIDGE_SETTLED') return 'BORROWED';
+      if (event.type === 'BRIDGE_REFUND') return 'ACTIVE_ON_BASE';
       break;
   }
   throw new IllegalTransitionError(state, event.type);

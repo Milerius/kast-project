@@ -28,3 +28,47 @@ describe('transition — deposit/borrow/repay/withdraw paths', () => {
     );
   });
 });
+
+describe('transition — bridge paths', () => {
+  it('BORROWED + BRIDGE_OUT → BRIDGING_OUT', () => {
+    expect(
+      transition('BORROWED', { type: 'BRIDGE_OUT', amountUsdc: 5n, orderHash: 'h1' }),
+    ).toBe('BRIDGING_OUT');
+  });
+
+  it('BRIDGING_OUT + BRIDGE_SETTLED → ACTIVE_ON_BASE', () => {
+    expect(transition('BRIDGING_OUT', { type: 'BRIDGE_SETTLED' })).toBe('ACTIVE_ON_BASE');
+  });
+
+  it('BRIDGING_OUT + BRIDGE_REFUND → BORROWED', () => {
+    expect(transition('BRIDGING_OUT', { type: 'BRIDGE_REFUND' })).toBe('BORROWED');
+  });
+
+  it('ACTIVE_ON_BASE + BRIDGE_BACK → BRIDGING_BACK', () => {
+    expect(
+      transition('ACTIVE_ON_BASE', { type: 'BRIDGE_BACK', amountUsdc: 5n, orderHash: 'h2' }),
+    ).toBe('BRIDGING_BACK');
+  });
+
+  it('BRIDGING_BACK + BRIDGE_SETTLED → BORROWED', () => {
+    expect(transition('BRIDGING_BACK', { type: 'BRIDGE_SETTLED' })).toBe('BORROWED');
+  });
+
+  it('BRIDGING_BACK + BRIDGE_REFUND → ACTIVE_ON_BASE', () => {
+    expect(transition('BRIDGING_BACK', { type: 'BRIDGE_REFUND' })).toBe('ACTIVE_ON_BASE');
+  });
+
+  it('BRIDGE_REFUND inverts BRIDGE_OUT', () => {
+    const s1 = transition('BORROWED', { type: 'BRIDGE_OUT', amountUsdc: 5n, orderHash: 'x' });
+    expect(transition(s1, { type: 'BRIDGE_REFUND' })).toBe('BORROWED');
+  });
+
+  it('BRIDGE_REFUND inverts BRIDGE_BACK', () => {
+    const s1 = transition('ACTIVE_ON_BASE', {
+      type: 'BRIDGE_BACK',
+      amountUsdc: 5n,
+      orderHash: 'x',
+    });
+    expect(transition(s1, { type: 'BRIDGE_REFUND' })).toBe('ACTIVE_ON_BASE');
+  });
+});
