@@ -1,0 +1,30 @@
+{
+  "name": "kast-project",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=20.17" },
+  "scripts": {
+    "build": "pnpm -r --filter=!integration-tests --filter=!scenario-tests build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r --filter=!integration-tests test",
+    "test:unit": "pnpm --filter='./packages/*' test",
+    "test:property": "pnpm --filter verify test",
+    "test:bdd": "pnpm --filter scenario-tests test",
+    "test:integration": "pnpm --filter integration-tests test",
+    "test:smoke": "pnpm --filter @kast/web exec playwright test",
+    "test:mutation": "pnpm --filter orchestrator exec stryker run && pnpm --filter verify exec stryker run",
+    "dev": "pnpm --filter @kast/web dev"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "eslint": "9.13.0",
+    "prettier": "3.3.3",
+    "@typescript-eslint/eslint-plugin": "8.12.2",
+    "@typescript-eslint/parser": "8.12.2",
+    "eslint-config-next": "15.0.2",
+    "eslint-config-prettier": "9.1.0"
+  }
+}
