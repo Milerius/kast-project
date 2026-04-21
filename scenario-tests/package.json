@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cucumber-js --config cucumber.mjs",
+    "test": "NODE_OPTIONS='--import tsx/esm' cucumber-js --import 'orchestrator/**/*.ts' features/",
+    "test:live": "NODE_OPTIONS='--import tsx/esm' cucumber-js --import 'live/**/*.ts' --tags '@live' features/",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
