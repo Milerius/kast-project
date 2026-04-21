@@ -51,6 +51,15 @@ export function transition(state: PositionState, event: Event): PositionState {
   throw new IllegalTransitionError(state, event.type);
 }
 
-export function canFire(_state: PositionState, _event: Event['type']): boolean {
-  throw new Error('not implemented');
+const LEGAL: Record<PositionState, Set<Event['type']>> = {
+  IDLE: new Set(['DEPOSIT']),
+  DEPOSITED: new Set(['BORROW', 'WITHDRAW']),
+  BORROWED: new Set(['REPAY', 'BRIDGE_OUT']),
+  BRIDGING_OUT: new Set(['BRIDGE_SETTLED', 'BRIDGE_REFUND']),
+  ACTIVE_ON_BASE: new Set(['BRIDGE_BACK']),
+  BRIDGING_BACK: new Set(['BRIDGE_SETTLED', 'BRIDGE_REFUND']),
+};
+
+export function canFire(state: PositionState, event: Event['type']): boolean {
+  return LEGAL[state].has(event);
 }

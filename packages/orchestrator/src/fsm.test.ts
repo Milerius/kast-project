@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { transition, IllegalTransitionError } from './fsm.js';
+import { transition, canFire, IllegalTransitionError } from './fsm.js';
 
 describe('transition — deposit/borrow/repay/withdraw paths', () => {
   it('IDLE + DEPOSIT → DEPOSITED', () => {
@@ -70,5 +70,19 @@ describe('transition — bridge paths', () => {
       orderHash: 'x',
     });
     expect(transition(s1, { type: 'BRIDGE_REFUND' })).toBe('ACTIVE_ON_BASE');
+  });
+});
+
+describe('canFire', () => {
+  it('returns true for legal transitions', () => {
+    expect(canFire('IDLE', 'DEPOSIT')).toBe(true);
+    expect(canFire('BORROWED', 'BRIDGE_OUT')).toBe(true);
+    expect(canFire('BRIDGING_OUT', 'BRIDGE_SETTLED')).toBe(true);
+  });
+
+  it('returns false for illegal transitions', () => {
+    expect(canFire('IDLE', 'BORROW')).toBe(false);
+    expect(canFire('ACTIVE_ON_BASE', 'REPAY')).toBe(false);
+    expect(canFire('BRIDGING_OUT', 'DEPOSIT')).toBe(false);
   });
 });
