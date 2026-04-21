@@ -102,7 +102,7 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
       };
     },
 
-    getSwapFromEvmTxPayload: async (
+    getSwapFromEvmTxPayload: (
       quote: unknown,
       fromAddress: string,
       toAddress: string,
@@ -162,6 +162,6 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
         toAddress: raw.toAddress,
       });
     },
-    getOrderStatus: (h) => getOrderStatusImpl(sdk, h) as Promise<OrderStatus>,
+    getOrderStatus: (h) => getOrderStatusImpl(sdk, h),
   };
 }

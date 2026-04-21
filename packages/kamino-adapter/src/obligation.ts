@@ -1,4 +1,4 @@
-import { PublicKey } from '@solana/web3.js';
+import type { PublicKey } from '@solana/web3.js';
 import { SOLANA_SOL_MINT, SOLANA_USDC_MINT, type ObligationView } from '@kast/shared';
 
 type MarketLike = {

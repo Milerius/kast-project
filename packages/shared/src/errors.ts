@@ -17,9 +17,6 @@ export class QuoteStaleError extends KastError {
 
 export class InsufficientGasError extends KastError {
   constructor(chain: string, required: bigint, actual: bigint) {
-    super(
-      `Insufficient gas on ${chain}: need ${required}, have ${actual}`,
-      'INSUFFICIENT_GAS',
-    );
+    super(`Insufficient gas on ${chain}: need ${required}, have ${actual}`, 'INSUFFICIENT_GAS');
   }
 }

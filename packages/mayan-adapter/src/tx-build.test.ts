@@ -13,14 +13,18 @@ describe('buildBridgeTx', () => {
       getSwapFromEvmTxPayload: vi.fn(),
       deriveOrderHash: vi.fn().mockReturnValue('0xabc'),
     };
-    const bundle = await buildBridgeTx(sdk as never, {
-      expiresAt: 0,
-      minAmountOut: 0n,
-      raw: rawQuote,
-    }, {
-      fromAddress: '11111111111111111111111111111111',
-      toAddress: '0xBase',
-    });
+    const bundle = await buildBridgeTx(
+      sdk as never,
+      {
+        expiresAt: 0,
+        minAmountOut: 0n,
+        raw: rawQuote,
+      },
+      {
+        fromAddress: '11111111111111111111111111111111',
+        toAddress: '0xBase',
+      },
+    );
     expect(bundle.chain).toBe('solana');
     expect(bundle.orderHash).toBe('0xabc');
   });
@@ -35,14 +39,18 @@ describe('buildBridgeTx', () => {
       }),
       deriveOrderHash: vi.fn().mockReturnValue('0xdef'),
     };
-    const bundle = await buildBridgeTx(sdk as never, {
-      expiresAt: 0,
-      minAmountOut: 0n,
-      raw: rawQuote,
-    }, {
-      fromAddress: '0xBase',
-      toAddress: 'DstSol',
-    });
+    const bundle = await buildBridgeTx(
+      sdk as never,
+      {
+        expiresAt: 0,
+        minAmountOut: 0n,
+        raw: rawQuote,
+      },
+      {
+        fromAddress: '0xBase',
+        toAddress: 'DstSol',
+      },
+    );
     expect(bundle.chain).toBe('base');
     if (bundle.chain !== 'base') throw new Error('narrowing');
     expect(bundle.txs).toHaveLength(2);

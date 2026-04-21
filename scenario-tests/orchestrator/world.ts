@@ -1,4 +1,5 @@
-import { setWorldConstructor, World, IWorldOptions } from '@cucumber/cucumber';
+import type { IWorldOptions } from '@cucumber/cucumber';
+import { setWorldConstructor, World } from '@cucumber/cucumber';
 import type { PositionState } from '@kast/orchestrator';
 import type { ObligationView, PersistedOrder } from '@kast/shared';
 

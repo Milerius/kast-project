@@ -4,11 +4,7 @@ import { PublicKey } from '@solana/web3.js';
 import { useWallets } from '@privy-io/react-auth';
 import { useSolanaWallets, useSendTransaction } from '@privy-io/react-auth/solana';
 import { canFire, transition } from '@kast/orchestrator';
-import {
-  DEFAULT_BORROW_USDC_UNITS,
-  USDC_BASE_UNITS,
-  type PersistedOrder,
-} from '@kast/shared';
+import { DEFAULT_BORROW_USDC_UNITS, USDC_BASE_UNITS, type PersistedOrder } from '@kast/shared';
 import { createKaminoAdapter } from '@kast/kamino-adapter';
 import { createMayanAdapter } from '@kast/mayan-adapter';
 import { solanaConnection } from '../lib/chain.js';
@@ -74,17 +70,19 @@ export function CloseFlow() {
       trackOrder(order);
       const provider = await evmWallet!.getEthereumProvider();
       for (const tx of bundle.txs) {
-        const hash = await provider.request({
+        const hash = (await provider.request({
           method: 'eth_sendTransaction',
           params: [{ to: tx.to, data: tx.data, value: `0x${tx.value.toString(16)}` }],
-        });
-        pushLog({ message: 'EVM tx submitted', sig: hash as string });
+        })) as string;
+        pushLog({ message: 'EVM tx submitted', sig: hash });
       }
-      setState(transition(state, {
-        type: 'BRIDGE_BACK',
-        amountUsdc: amt,
-        orderHash: bundle.orderHash,
-      }));
+      setState(
+        transition(state, {
+          type: 'BRIDGE_BACK',
+          amountUsdc: amt,
+          orderHash: bundle.orderHash,
+        }),
+      );
       const status = await pollOrder(bundle.orderHash);
       if (status === 'SETTLED') {
         setState(transition(state, { type: 'BRIDGE_SETTLED' }));
@@ -142,13 +140,16 @@ export function CloseFlow() {
           placeholder="Partial USDC (blank = max)"
           className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm"
         />
-        <button disabled={busy || !canFire(state, 'BRIDGE_BACK')} onClick={onBridgeBack}>
+        <button
+          disabled={busy || !canFire(state, 'BRIDGE_BACK')}
+          onClick={() => void onBridgeBack()}
+        >
           4. Bridge back
         </button>
-        <button disabled={busy || !canFire(state, 'REPAY')} onClick={onRepay}>
+        <button disabled={busy || !canFire(state, 'REPAY')} onClick={() => void onRepay()}>
           5. Repay
         </button>
-        <button disabled={busy || !canFire(state, 'WITHDRAW')} onClick={onWithdraw}>
+        <button disabled={busy || !canFire(state, 'WITHDRAW')} onClick={() => void onWithdraw()}>
           6. Withdraw
         </button>
       </div>

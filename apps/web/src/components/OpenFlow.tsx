@@ -95,11 +95,13 @@ export function OpenFlow() {
       if (bundle.chain !== 'solana') throw new Error('expected solana bundle');
       const result = await sendTransaction({ transaction: bundle.txs[0], connection });
       pushLog({ message: 'Bridge tx submitted', sig: result.signature });
-      setState(transition(state, {
-        type: 'BRIDGE_OUT',
-        amountUsdc: DEFAULT_BORROW_USDC_UNITS,
-        orderHash: bundle.orderHash,
-      }));
+      setState(
+        transition(state, {
+          type: 'BRIDGE_OUT',
+          amountUsdc: DEFAULT_BORROW_USDC_UNITS,
+          orderHash: bundle.orderHash,
+        }),
+      );
     } finally {
       setBusy(false);
     }
@@ -109,13 +111,13 @@ export function OpenFlow() {
     <section className="space-y-2">
       <h2 className="text-lg font-bold">Open</h2>
       <div className="flex gap-2">
-        <button disabled={busy || !canFire(state, 'DEPOSIT')} onClick={onDeposit}>
+        <button disabled={busy || !canFire(state, 'DEPOSIT')} onClick={() => void onDeposit()}>
           1. Deposit SOL
         </button>
-        <button disabled={busy || !canFire(state, 'BORROW')} onClick={onBorrow}>
+        <button disabled={busy || !canFire(state, 'BORROW')} onClick={() => void onBorrow()}>
           2. Borrow 5 USDC
         </button>
-        <button disabled={busy || !canFire(state, 'BRIDGE_OUT')} onClick={onBridgeOut}>
+        <button disabled={busy || !canFire(state, 'BRIDGE_OUT')} onClick={() => void onBridgeOut()}>
           3. Bridge to Base
         </button>
       </div>

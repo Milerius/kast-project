@@ -31,9 +31,9 @@ describe('transition — deposit/borrow/repay/withdraw paths', () => {
 
 describe('transition — bridge paths', () => {
   it('BORROWED + BRIDGE_OUT → BRIDGING_OUT', () => {
-    expect(
-      transition('BORROWED', { type: 'BRIDGE_OUT', amountUsdc: 5n, orderHash: 'h1' }),
-    ).toBe('BRIDGING_OUT');
+    expect(transition('BORROWED', { type: 'BRIDGE_OUT', amountUsdc: 5n, orderHash: 'h1' })).toBe(
+      'BRIDGING_OUT',
+    );
   });
 
   it('BRIDGING_OUT + BRIDGE_SETTLED → ACTIVE_ON_BASE', () => {

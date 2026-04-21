@@ -1,4 +1,4 @@
-import { PublicKey, VersionedTransaction } from '@solana/web3.js';
+import type { PublicKey, VersionedTransaction } from '@solana/web3.js';
 import { SOLANA_SOL_MINT } from '@kast/shared';
 
 export type MarketForWithdraw = {

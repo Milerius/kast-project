@@ -11,7 +11,13 @@ export default tseslint.config(
     extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
-        project: ['./tsconfig.base.json', './apps/*/tsconfig.json', './packages/*/tsconfig.json'],
+        project: [
+          './tsconfig.base.json',
+          './apps/*/tsconfig.json',
+          './packages/*/tsconfig.json',
+          './integration-tests/tsconfig.json',
+          './scenario-tests/tsconfig.json',
+        ],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -29,7 +35,7 @@ export default tseslint.config(
   //   ...nextPlugin,
   // },
   {
-    ignores: ['**/dist/**', '**/.next/**', '**/node_modules/**', '**/coverage/**'],
+    ignores: ['**/dist/**', '**/.next/**', '**/node_modules/**', '**/coverage/**', 'docker/**'],
   },
   prettier,
 );

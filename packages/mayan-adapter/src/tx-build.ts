@@ -23,10 +23,15 @@ type SdkLike = {
     chainId: number,
     rpc: unknown,
     permit: unknown,
-  ) => Promise<{
-    approve: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
-    swap: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
-  }>;
+  ) =>
+    | {
+        approve: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
+        swap: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
+      }
+    | Promise<{
+        approve: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
+        swap: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
+      }>;
   deriveOrderHash: (quote: unknown) => string;
 };
 

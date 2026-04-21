@@ -9,7 +9,10 @@ import { buildWithdrawCollateralTx } from './tx-withdraw.js';
 
 export interface KaminoAdapter {
   getObligation(owner: PublicKey): Promise<ObligationView | null>;
-  buildDepositCollateralTx(p: { owner: PublicKey; lamports: bigint }): Promise<VersionedTransaction[]>;
+  buildDepositCollateralTx(p: {
+    owner: PublicKey;
+    lamports: bigint;
+  }): Promise<VersionedTransaction[]>;
   buildBorrowTx(p: { owner: PublicKey; amountUsdc: bigint }): Promise<VersionedTransaction[]>;
   buildRepayTx(p: { owner: PublicKey; amount: bigint | 'all' }): Promise<VersionedTransaction[]>;
   buildWithdrawCollateralTx(p: {

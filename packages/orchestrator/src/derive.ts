@@ -16,7 +16,8 @@ export function derivePositionFromChain(args: DeriveInput): PositionState {
   if (pendingBack) return 'BRIDGING_BACK';
 
   if (!obligation) return 'IDLE';
-  if (obligation.collateralLamports === 0n && obligation.borrowedUsdcBaseUnits === 0n) return 'IDLE';
+  if (obligation.collateralLamports === 0n && obligation.borrowedUsdcBaseUnits === 0n)
+    return 'IDLE';
   if (obligation.borrowedUsdcBaseUnits === 0n) return 'DEPOSITED';
   if (baseUsdc > 0n) return 'ACTIVE_ON_BASE';
   return 'BORROWED';

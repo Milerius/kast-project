@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PublicKey, VersionedTransaction } from '@solana/web3.js';
+import type { VersionedTransaction } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { buildDepositCollateralTx } from './tx-deposit.js';
 
 const owner = new PublicKey('11111111111111111111111111111111');

@@ -61,7 +61,7 @@ export default function Page() {
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">KAST DeFi</h1>
         {authenticated ? (
-          <button onClick={logout}>Log out</button>
+          <button onClick={() => void logout()}>Log out</button>
         ) : (
           <button onClick={login}>Log in</button>
         )}

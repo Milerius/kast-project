@@ -6,9 +6,7 @@ describe('getObligation', () => {
   it('returns null when obligation not found', async () => {
     const fakeMarket = { getObligationByWallet: vi.fn().mockResolvedValue(null) };
     const owner = new PublicKey('11111111111111111111111111111111');
-    await expect(
-      getObligation({ market: fakeMarket as never, owner }),
-    ).resolves.toBeNull();
+    await expect(getObligation({ market: fakeMarket as never, owner })).resolves.toBeNull();
   });
 
   it('returns ObligationView when present', async () => {

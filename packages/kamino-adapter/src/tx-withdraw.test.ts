@@ -4,6 +4,8 @@ import { buildWithdrawCollateralTx } from './tx-withdraw.js';
 
 const owner = new PublicKey('11111111111111111111111111111111');
 
+type WithdrawArg = { amount?: bigint; withdrawAll?: boolean };
+
 describe('buildWithdrawCollateralTx', () => {
   it("'all' sets withdrawAll: true", async () => {
     const build = vi.fn().mockResolvedValue([]);
@@ -12,7 +14,8 @@ describe('buildWithdrawCollateralTx', () => {
       owner,
       lamports: 'all',
     });
-    expect(build.mock.calls[0]?.[0]?.withdrawAll).toBe(true);
+    const call = build.mock.calls[0]?.[0] as WithdrawArg | undefined;
+    expect(call?.withdrawAll).toBe(true);
   });
 
   it('partial lamports passes bigint', async () => {
@@ -22,7 +25,7 @@ describe('buildWithdrawCollateralTx', () => {
       owner,
       lamports: 500_000_000n,
     });
-    const call = build.mock.calls[0]?.[0];
+    const call = build.mock.calls[0]?.[0] as WithdrawArg | undefined;
     expect(call?.amount).toBe(500_000_000n);
     expect(call?.withdrawAll).toBe(false);
   });

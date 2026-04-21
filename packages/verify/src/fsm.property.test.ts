@@ -1,6 +1,12 @@
 import { describe, it } from 'vitest';
 import fc from 'fast-check';
-import { transition, canFire, IllegalTransitionError, type Event, type PositionState } from '@kast/orchestrator';
+import {
+  transition,
+  canFire,
+  IllegalTransitionError,
+  type Event,
+  type PositionState,
+} from '@kast/orchestrator';
 
 const STATES: PositionState[] = [
   'IDLE',
@@ -26,8 +32,14 @@ const anyState = () => fc.constantFrom(...STATES);
 
 const anyEvent = (): fc.Arbitrary<Event> =>
   fc.oneof(
-    fc.record({ type: fc.constant('DEPOSIT' as const), lamports: fc.bigInt({ min: 1n, max: 10n ** 12n }) }),
-    fc.record({ type: fc.constant('BORROW' as const), amountUsdc: fc.bigInt({ min: 1n, max: 10n ** 9n }) }),
+    fc.record({
+      type: fc.constant('DEPOSIT' as const),
+      lamports: fc.bigInt({ min: 1n, max: 10n ** 12n }),
+    }),
+    fc.record({
+      type: fc.constant('BORROW' as const),
+      amountUsdc: fc.bigInt({ min: 1n, max: 10n ** 9n }),
+    }),
     fc.record({
       type: fc.constant('BRIDGE_OUT' as const),
       amountUsdc: fc.bigInt({ min: 1n, max: 10n ** 9n }),
@@ -74,14 +86,18 @@ describe('FSM invariants (property-based)', () => {
     );
   });
 
-  it("BRIDGE_REFUND inverts BRIDGE_OUT for {BORROWED}", () => {
+  it('BRIDGE_REFUND inverts BRIDGE_OUT for {BORROWED}', () => {
     const s1 = transition('BORROWED', { type: 'BRIDGE_OUT', amountUsdc: 1n, orderHash: 'x' });
     const s2 = transition(s1, { type: 'BRIDGE_REFUND' });
     if (s2 !== 'BORROWED') throw new Error('refund did not invert');
   });
 
   it('BRIDGE_REFUND inverts BRIDGE_BACK for {ACTIVE_ON_BASE}', () => {
-    const s1 = transition('ACTIVE_ON_BASE', { type: 'BRIDGE_BACK', amountUsdc: 1n, orderHash: 'x' });
+    const s1 = transition('ACTIVE_ON_BASE', {
+      type: 'BRIDGE_BACK',
+      amountUsdc: 1n,
+      orderHash: 'x',
+    });
     const s2 = transition(s1, { type: 'BRIDGE_REFUND' });
     if (s2 !== 'ACTIVE_ON_BASE') throw new Error('refund did not invert');
   });

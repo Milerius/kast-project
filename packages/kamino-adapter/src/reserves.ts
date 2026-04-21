@@ -17,6 +17,7 @@ export async function loadMarket(args: {
     args.marketAddress,
     RECENT_SLOT_DURATION_MS,
   );
-  if (!market) throw new Error(`KaminoMarket.load returned null for ${args.marketAddress.toBase58()}`);
+  if (!market)
+    throw new Error(`KaminoMarket.load returned null for ${args.marketAddress.toBase58()}`);
   return market;
 }
