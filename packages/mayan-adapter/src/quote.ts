@@ -10,7 +10,13 @@ type SdkLike = {
     toChain: string;
     slippageBps: number;
     referrer?: string;
-  }) => Promise<Array<{ deadline64: string; minAmountOut64: string }>>;
+  }) => Promise<
+    Array<{
+      deadline64: string;
+      minAmountOut: number;
+      toToken: { decimals: number };
+    }>
+  >;
 };
 
 const USDC_FOR_CHAIN: Record<Chain, string> = {
@@ -42,7 +48,7 @@ export async function quote(
   if (!best) throw new Error('Mayan returned no quote');
   return {
     expiresAt: Number(best.deadline64) * 1000,
-    minAmountOut: BigInt(best.minAmountOut64),
+    minAmountOut: BigInt(Math.round(best.minAmountOut * 10 ** best.toToken.decimals)),
     raw: best,
   };
 }

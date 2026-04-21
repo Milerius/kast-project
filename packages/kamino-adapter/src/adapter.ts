@@ -1,5 +1,6 @@
 import type { Connection, PublicKey, VersionedTransaction } from '@solana/web3.js';
 import type { ObligationView } from '@kast/shared';
+import { VanillaObligation } from '@kamino-finance/klend-sdk';
 import { loadMarket } from './reserves.js';
 import { getObligation as getObligationImpl } from './obligation.js';
 import { buildDepositCollateralTx } from './tx-deposit.js';
@@ -31,7 +32,11 @@ export function createKaminoAdapter(config: KaminoAdapterConfig): KaminoAdapter 
 
   return {
     async getObligation(owner) {
-      return getObligationImpl({ market: (await marketPromise) as never, owner });
+      return getObligationImpl({
+        market: (await marketPromise) as never,
+        owner,
+        VanillaObligation: VanillaObligation as never,
+      });
     },
     async buildDepositCollateralTx(p) {
       return buildDepositCollateralTx({ market: (await marketPromise) as never, ...p });

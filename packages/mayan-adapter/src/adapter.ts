@@ -69,7 +69,9 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
       toChain: string;
       slippageBps: number;
       referrer?: string;
-    }): Promise<Array<{ deadline64: string; minAmountOut64: string }>> => {
+    }): Promise<
+      Array<{ deadline64: string; minAmountOut: number; toToken: { decimals: number } }>
+    > => {
       const quotes = await fetchQuote({
         amount: args.amount,
         fromToken: args.fromToken,
@@ -79,7 +81,11 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
         slippageBps: args.slippageBps,
         ...(args.referrer !== undefined && { referrer: args.referrer }),
       });
-      return quotes as unknown as Array<{ deadline64: string; minAmountOut64: string }>;
+      return quotes as unknown as Array<{
+        deadline64: string;
+        minAmountOut: number;
+        toToken: { decimals: number };
+      }>;
     },
 
     createSwapFromSolanaInstructions: async (

@@ -3,7 +3,11 @@ import { quote } from './quote.js';
 
 describe('quote', () => {
   it('calls fetchQuote with USDC mints for sol→base', async () => {
-    const fakeQuote = { deadline64: '1800000000', minAmountOut64: '4950000' };
+    const fakeQuote = {
+      deadline64: '1800000000',
+      minAmountOut: 4.95,
+      toToken: { decimals: 6 },
+    };
     const fetchQuote = vi.fn().mockResolvedValue([fakeQuote]);
     const out = await quote({ fetchQuote } as never, {
       fromChain: 'solana',
