@@ -15,12 +15,19 @@ export async function buildRepayTx(args: {
   owner: PublicKey;
   amount: bigint | 'all';
 }): Promise<VersionedTransaction[]> {
-  const repayAll = args.amount === 'all';
-  if (!repayAll && args.amount <= 0n) throw new Error('amount must be positive');
+  if (args.amount === 'all') {
+    return args.market.buildRepayTxns({
+      owner: args.owner,
+      amount: 0n,
+      mint: SOLANA_USDC_MINT,
+      repayAll: true,
+    });
+  }
+  if (args.amount <= 0n) throw new Error('amount must be positive');
   return args.market.buildRepayTxns({
     owner: args.owner,
-    amount: repayAll ? 0n : (args.amount as bigint),
+    amount: args.amount,
     mint: SOLANA_USDC_MINT,
-    repayAll,
+    repayAll: false,
   });
 }
