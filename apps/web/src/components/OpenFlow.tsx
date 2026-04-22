@@ -154,9 +154,9 @@ export function OpenFlow() {
       );
       const result = await sendTransaction({ transaction: tx, connection });
       pushLog({ message: 'Bridge tx submitted', sig: result.signature, chain: 'mayan' });
-      // Mayan explorer indexes by source tx sig; for SWIFT we also have a
-      // pre-computed orderHash. Either works as a tracking key.
-      const trackingKey = bundle.orderHash ?? result.signature;
+      // Mayan's status API indexes by SOURCE tx hash for both Swift and
+      // FAST_MCTP routes — orderHash lookups will 404-loop in the poller.
+      const trackingKey = result.signature;
       const order: PersistedOrder = {
         orderHash: trackingKey,
         direction: 'out',

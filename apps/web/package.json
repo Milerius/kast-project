@@ -15,14 +15,14 @@
     "@kast/shared": "workspace:*",
     "@privy-io/react-auth": "2.2.1",
     "@solana/web3.js": "1.95.4",
-    "next": "15.0.2",
+    "next": "15.5.15",
     "react": "19.0.0-rc-69d4b800-20241021",
     "react-dom": "19.0.0-rc-69d4b800-20241021",
     "viem": "2.21.34",
     "zustand": "5.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "1.48.2",
+    "@playwright/test": "1.55.1",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "@types/node": "20.17.0",

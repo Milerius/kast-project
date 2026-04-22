@@ -23,17 +23,23 @@ export function usePendingOrderPoller() {
           if (canceled) return;
           if (status === 'PENDING') continue;
 
+          // Only untrack AFTER the FSM has consumed the terminal event.
+          // If we untrack first and the state hasn't caught up yet (e.g. on a
+          // page reload before BRIDGING_* is persisted), the SETTLED/REFUND
+          // signal would be discarded forever and the user would stay stuck
+          // in a pending-bridge UI.
           const store = useKastStore.getState();
-          // untrack first so re-entry doesn't re-fire the transition
-          store.untrackOrder(order.orderHash);
           store.pushLog({ message: `Order ${order.orderHash.slice(0, 10)}… ${status}` });
 
           const ev = status === 'SETTLED' ? 'BRIDGE_SETTLED' : 'BRIDGE_REFUND';
           const currentState = useKastStore.getState().state;
           if (canFire(currentState, ev)) {
             store.setState(transition(currentState, { type: ev }));
+            store.untrackOrder(order.orderHash);
+            store.bumpBalanceRefresh();
           }
-          store.bumpBalanceRefresh();
+          // If the FSM can't consume the event yet, leave the order in the
+          // pending list so the next tick retries once state has caught up.
         } catch (e) {
           // Mayan sometimes 404s briefly after submission while the order
           // lands in the indexer. Keep polling — the interval handles retry.

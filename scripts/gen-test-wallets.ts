@@ -10,7 +10,7 @@
  *
  * Consumed by: scripts/e2e-broadcast.ts (next step).
  */
-import { writeFileSync, existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Keypair } from '@solana/web3.js';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
@@ -43,7 +43,17 @@ function main(): void {
     `BASE_TEST_PRIVKEY=${baseKey}\n` +
     `BASE_TEST_ADDRESS=${baseAccount.address}\n`;
 
-  writeFileSync(OUT_PATH, content, { mode: 0o600 });
+  // writeFileSync({ mode }) only applies the mode when the file is *created*.
+  // If the user regenerates with --force, the prior permissive bits would leak
+  // into the new write. Unlink first, then open with O_CREAT|O_EXCL and 0600
+  // so the secrets file is guaranteed to start with tight permissions.
+  if (existsSync(OUT_PATH)) unlinkSync(OUT_PATH);
+  const fd = openSync(OUT_PATH, 'wx', 0o600);
+  try {
+    writeSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
 
   console.log(`wrote ${OUT_PATH} (mode 0600)\n`);
   console.log('Public addresses — fund these:');

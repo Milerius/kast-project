@@ -30,7 +30,7 @@ export function transition(state: PositionState, event: Event): PositionState {
       break;
     case 'DEPOSITED':
       if (event.type === 'BORROW') return 'BORROWED';
-      if (event.type === 'WITHDRAW') return 'IDLE';
+      if (event.type === 'WITHDRAW') return event.lamports === 'all' ? 'IDLE' : 'DEPOSITED';
       break;
     case 'BORROWED':
       if (event.type === 'REPAY') return event.amount === 'all' ? 'DEPOSITED' : 'BORROWED';

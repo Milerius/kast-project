@@ -25,6 +25,32 @@ const USDC_FOR_CHAIN: Record<Chain, string> = {
   base: BASE_USDC,
 };
 
+const USDC_DECIMALS = 6;
+
+// Mayan's SDK takes `amount` as a JS number. Guard against silent precision
+// loss when the bigint exceeds MAX_SAFE_INTEGER (~9e15 ≈ 9 billion USDC base
+// units) so callers get a loud error instead of a rounded amount.
+function baseUnitsToHuman(units: bigint, decimals: number): number {
+  if (units < 0n) throw new Error(`negative amount: ${units}`);
+  if (units > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`amount ${units} exceeds safe Number range for Mayan quote`);
+  }
+  return Number(units) / 10 ** decimals;
+}
+
+// Convert a human-decimal float back to base units using string arithmetic so
+// we don't round-trip through float * 10 ** decimals (which drifts by ULPs for
+// many decimal values, e.g. 0.1 + 0.2).
+function humanToBaseUnits(value: number, decimals: number): bigint {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`invalid amount: ${value}`);
+  }
+  const fixed = value.toFixed(decimals);
+  const [whole = '0', frac = ''] = fixed.split('.');
+  const fracPadded = frac.padEnd(decimals, '0').slice(0, decimals);
+  return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(fracPadded || '0');
+}
+
 // FAST_MCTP avoids Swift's solver auction (no stranding risk on small amounts)
 // and uses Circle CCTPv2 — cheaper refunds, no orderHash to track.
 function selectRoute(quotes: ReadonlyArray<RouteQuote>): RouteQuote {
@@ -47,7 +73,7 @@ export async function quote(
   },
 ): Promise<Quote> {
   const quotes = await sdk.fetchQuote({
-    amount: Number(args.amountUsdc) / 1_000_000,
+    amount: baseUnitsToHuman(args.amountUsdc, USDC_DECIMALS),
     fromToken: USDC_FOR_CHAIN[args.fromChain],
     toToken: USDC_FOR_CHAIN[args.toChain],
     fromChain: args.fromChain,
@@ -58,7 +84,7 @@ export async function quote(
   const best = selectRoute(quotes);
   return {
     expiresAt: Number(best.deadline64) * 1000,
-    minAmountOut: BigInt(Math.round(best.minAmountOut * 10 ** best.toToken.decimals)),
+    minAmountOut: humanToBaseUnits(best.minAmountOut, best.toToken.decimals),
     raw: {
       ...best,
       fromChain: args.fromChain,

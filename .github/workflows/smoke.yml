@@ -15,6 +15,22 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: docker compose -f docker/docker-compose.yml up -d --build
+      # Readiness gate: playwright test has its own webServer-style timeouts
+      # but the Next.js container can take >30s to boot. Poll the index route
+      # explicitly so we fail fast with a clear message instead of a flaky
+      # first-request timeout inside the test.
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000 >/dev/null; then
+              echo "app is up after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "app did not become ready in time" >&2
+          docker compose -f docker/docker-compose.yml logs >&2
+          exit 1
       - run: pnpm --filter @kast/web exec playwright install --with-deps chromium
       - run: pnpm --filter @kast/web exec playwright test
       - if: always()

@@ -1,0 +1,27 @@
+# Secrets — never bake into image or leak to build context
+.env
+.env.*
+!.env.example
+
+# Node / build outputs
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+coverage
+**/coverage
+
+# VCS / CI / local tooling
+.git
+.github
+.stryker-tmp
+.vscode
+.idea
+.DS_Store
+
+# Artifacts from local test runs
+playwright-report
+test-results
+*.log

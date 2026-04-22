@@ -42,6 +42,7 @@ export default tseslint.config(
       '**/coverage/**',
       'docker/**',
       'scripts/**',
+      'apps/web/next-env.d.ts',
     ],
   },
   prettier,

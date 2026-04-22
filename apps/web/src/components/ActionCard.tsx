@@ -54,21 +54,31 @@ export function ActionCard({
         ? 'text-primary-container'
         : 'text-on-surface/20';
 
+  // Nesting <a> / form controls inside <button> is invalid HTML. Use a wrapper
+  // div with an absolutely-positioned button sibling — the interactive links
+  // and any children controls become proper siblings of the button, not
+  // descendants, while the whole card area remains clickable via the button.
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`text-left w-full flex items-start gap-5 p-5 rounded-2xl bg-surface-container-low border ${ring} transition-all ${
-        disabled
-          ? 'opacity-80 cursor-not-allowed'
-          : 'hover:bg-surface-container hover:border-primary-container/90 cursor-pointer'
+    <div
+      className={`relative w-full flex items-start gap-5 p-5 rounded-2xl bg-surface-container-low border ${ring} transition-all ${
+        disabled ? 'opacity-80' : 'hover:bg-surface-container hover:border-primary-container/90'
       }`}
     >
-      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${iconBg}`}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        aria-label={title}
+        className={`absolute inset-0 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-container/40 ${
+          disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+        }`}
+      />
+      <div
+        className={`relative pointer-events-none w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${iconBg}`}
+      >
         <Icon name={icon} filled={status === 'done'} className="text-xl" />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="relative pointer-events-none flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="font-technical text-[10px] tracking-widest text-outline">
             STEP {index}
@@ -89,14 +99,13 @@ export function ActionCard({
           {subtitle}
         </div>
         {links && links.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2 pointer-events-auto">
             {links.map((l) => (
               <a
                 key={l.href}
                 href={l.href}
                 target="_blank"
                 rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
                 className="font-technical text-[10px] tracking-widest text-primary-container hover:underline flex items-center gap-1 bg-primary-container/10 px-2 py-0.5 rounded-full"
               >
                 {l.label}
@@ -105,9 +114,12 @@ export function ActionCard({
             ))}
           </div>
         )}
-        {children && <div className="mt-3">{children}</div>}
+        {children && <div className="mt-3 pointer-events-auto">{children}</div>}
       </div>
-      <Icon name={stateIcon} className={`text-lg mt-1 ${stateIconClass}`} />
-    </button>
+      <Icon
+        name={stateIcon}
+        className={`relative pointer-events-none text-lg mt-1 ${stateIconClass}`}
+      />
+    </div>
   );
 }

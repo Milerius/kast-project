@@ -1,7 +1,9 @@
 import { LAMPORTS_PER_SOL, TARGET_COLLATERAL_USD } from '@kast/shared';
 
 export function targetCollateralLamports(solUsdPrice: number): bigint {
-  if (solUsdPrice <= 0) throw new Error('solUsdPrice must be positive');
+  if (!Number.isFinite(solUsdPrice) || solUsdPrice <= 0) {
+    throw new Error('solUsdPrice must be a finite positive number');
+  }
   const sol = TARGET_COLLATERAL_USD / solUsdPrice;
   return BigInt(Math.floor(sol * Number(LAMPORTS_PER_SOL)));
 }

@@ -26,8 +26,10 @@ function statusFor(
   // The close flow isn't linear — DEPOSITED can shortcut straight to WITHDRAW
   // without bridging/repaying. So "done" must be anchored to whether the user
   // actually fired that step (stepSig recorded), not to FSM adjacency.
+  // Exception: a partial REPAY records a stepSig but leaves state in BORROWED
+  // with debt remaining — don't mark it "done" while more repay work is pending.
   if (busy) return 'active';
-  if (stepSigs[slot]) return 'done';
+  if (stepSigs[slot] && !(slot === 'REPAY' && state === 'BORROWED')) return 'done';
   if (canFire(state, slot)) return 'active';
   return 'locked';
 }
@@ -141,7 +143,10 @@ export function CloseFlow() {
         bridgeSig = hash;
       }
       if (!bridgeSig) throw new Error('no bridge sig');
-      const trackingKey = bundle.orderHash ?? bridgeSig;
+      // Mayan's status API indexes by SOURCE tx hash (not orderHash) for both
+      // Swift and FAST_MCTP routes. Using orderHash as the tracking key causes
+      // the poller to 404-loop and never settle the order.
+      const trackingKey = bridgeSig;
       const order: PersistedOrder = {
         orderHash: trackingKey,
         direction: 'back',

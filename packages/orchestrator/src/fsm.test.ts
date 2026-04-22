@@ -14,6 +14,10 @@ describe('transition — deposit/borrow/repay/withdraw paths', () => {
     expect(transition('DEPOSITED', { type: 'WITHDRAW', lamports: 'all' })).toBe('IDLE');
   });
 
+  it('DEPOSITED + WITHDRAW(partial) → DEPOSITED', () => {
+    expect(transition('DEPOSITED', { type: 'WITHDRAW', lamports: 1_000n })).toBe('DEPOSITED');
+  });
+
   it("BORROWED + REPAY('all') → DEPOSITED", () => {
     expect(transition('BORROWED', { type: 'REPAY', amount: 'all' })).toBe('DEPOSITED');
   });
