@@ -10,6 +10,6 @@ export function formatUsdc(baseUnits: bigint): string {
   return (Number(baseUnits) / 1_000_000).toFixed(6);
 }
 
-export function formatSol(lamports: bigint): string {
-  return (Number(lamports) / Number(LAMPORTS_PER_SOL)).toFixed(6);
+export function formatSol(lamports: bigint, decimals: number = 4): string {
+  return (Number(lamports) / Number(LAMPORTS_PER_SOL)).toFixed(decimals);
 }

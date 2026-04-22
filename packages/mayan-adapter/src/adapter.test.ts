@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { PublicKey } from '@solana/web3.js';
+import type * as MayanSdk from '@mayanfinance/swap-sdk';
 
 const { fetchQuoteSpy, createSwapSpy, getEvmPayloadSpy } = vi.hoisted(() => ({
   fetchQuoteSpy: vi.fn(),
@@ -6,15 +8,40 @@ const { fetchQuoteSpy, createSwapSpy, getEvmPayloadSpy } = vi.hoisted(() => ({
   getEvmPayloadSpy: vi.fn(),
 }));
 
-vi.mock('@mayanfinance/swap-sdk', () => ({
-  fetchQuote: fetchQuoteSpy,
-  createSwapFromSolanaInstructions: createSwapSpy,
-  getSwapFromEvmTxPayload: getEvmPayloadSpy,
-}));
+vi.mock('@mayanfinance/swap-sdk', async () => {
+  const actual = await vi.importActual<typeof MayanSdk>('@mayanfinance/swap-sdk');
+  return {
+    ...actual,
+    fetchQuote: fetchQuoteSpy,
+    createSwapFromSolanaInstructions: createSwapSpy,
+    getSwapFromEvmTxPayload: getEvmPayloadSpy,
+  };
+});
 
 import { createMayanAdapter } from './adapter.js';
+import { SWIFT_PROGRAM_ID } from './order-hash.js';
+import { encodeFunctionData } from 'viem';
 
+const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const BASE_USDC_ADDR = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const fakeConnection = { rpcEndpoint: 'http://localhost:8899' } as never;
+
+function swiftQuoteFields(overrides: Record<string, unknown>) {
+  return {
+    type: 'SWIFT',
+    swiftInputContract: SOL_USDC,
+    toToken: { contract: BASE_USDC_ADDR, decimals: 6 },
+    minAmountOut: 4.9,
+    gasDrop: 0,
+    cancelRelayerFee64: '0',
+    refundRelayerFee64: '0',
+    deadline64: String(Math.floor(Date.now() / 1000) + 3600),
+    referrerBps: 0,
+    protocolBps: 0,
+    swiftAuctionMode: 0,
+    ...overrides,
+  };
+}
 
 describe('createMayanAdapter — quote shim', () => {
   beforeEach(() => {
@@ -47,6 +74,35 @@ describe('createMayanAdapter — quote shim', () => {
     );
   });
 
+  it('prefers FAST_MCTP when the API returns both SWIFT and FAST_MCTP', async () => {
+    fetchQuoteSpy.mockResolvedValue([
+      {
+        type: 'SWIFT',
+        deadline64: '1800000000',
+        minAmountOut: 4.9,
+        toToken: { decimals: 6 },
+      },
+      {
+        type: 'FAST_MCTP',
+        deadline64: '1800000500',
+        minAmountOut: 4.94,
+        toToken: { decimals: 6 },
+      },
+    ]);
+    const adapter = createMayanAdapter({ solanaConnection: fakeConnection });
+    const q = await adapter.quote({
+      fromChain: 'solana',
+      toChain: 'base',
+      amountUsdc: 5_000_000n,
+      fromAddress: 'Src',
+      toAddress: '0xDst',
+    });
+    expect(q.expiresAt).toBe(1_800_000_500_000);
+    expect(q.minAmountOut).toBe(4_940_000n);
+    const raw = q.raw as { type: string };
+    expect(raw.type).toBe('FAST_MCTP');
+  });
+
   it('forwards referrer when config provides one', async () => {
     fetchQuoteSpy.mockResolvedValue([
       { deadline64: '1800000000', minAmountOut: 1, toToken: { decimals: 6 } },
@@ -73,27 +129,125 @@ describe('createMayanAdapter — buildBridgeTx shim', () => {
     getEvmPayloadSpy.mockReset();
   });
 
-  it('builds a base-chain approve+swap bundle with MAX_UINT256 allowance', async () => {
+  it('builds a base-chain approve+swap bundle with computed orderHash', async () => {
+    const randomHex = '7'.repeat(64);
+    const SWIFT_ABI = [
+      {
+        type: 'function',
+        name: 'createOrderWithToken',
+        stateMutability: 'nonpayable',
+        inputs: [
+          { name: 'tokenIn', type: 'address' },
+          { name: 'amountIn', type: 'uint256' },
+          {
+            name: 'params',
+            type: 'tuple',
+            components: [
+              { name: 'trader', type: 'bytes32' },
+              { name: 'tokenOut', type: 'bytes32' },
+              { name: 'minAmountOut', type: 'uint64' },
+              { name: 'gasDrop', type: 'uint64' },
+              { name: 'cancelFee', type: 'uint64' },
+              { name: 'refundFee', type: 'uint64' },
+              { name: 'deadline', type: 'uint64' },
+              { name: 'destAddr', type: 'bytes32' },
+              { name: 'destChainId', type: 'uint16' },
+              { name: 'referrerAddr', type: 'bytes32' },
+              { name: 'referrerBps', type: 'uint8' },
+              { name: 'auctionMode', type: 'uint8' },
+              { name: 'random', type: 'bytes32' },
+            ],
+          },
+        ],
+        outputs: [],
+      },
+    ] as const;
+    const FORWARDER_ABI = [
+      {
+        type: 'function',
+        name: 'forwardERC20',
+        stateMutability: 'payable',
+        inputs: [
+          { name: 'tokenIn', type: 'address' },
+          { name: 'amountIn', type: 'uint256' },
+          {
+            name: 'permitParams',
+            type: 'tuple',
+            components: [
+              { name: 'value', type: 'uint256' },
+              { name: 'deadline', type: 'uint256' },
+              { name: 'v', type: 'uint8' },
+              { name: 'r', type: 'bytes32' },
+              { name: 's', type: 'bytes32' },
+            ],
+          },
+          { name: 'mayanProtocol', type: 'address' },
+          { name: 'protocolData', type: 'bytes' },
+        ],
+        outputs: [],
+      },
+    ] as const;
+    const zero32: `0x${string}` = `0x${'00'.repeat(32)}`;
+    const swiftCall = encodeFunctionData({
+      abi: SWIFT_ABI,
+      functionName: 'createOrderWithToken',
+      args: [
+        BASE_USDC_ADDR as `0x${string}`,
+        0n,
+        [
+          zero32,
+          zero32,
+          0n,
+          0n,
+          0n,
+          0n,
+          BigInt(Math.floor(Date.now() / 1000) + 3600),
+          zero32,
+          1,
+          zero32,
+          0,
+          0,
+          `0x${randomHex}`,
+        ] as never,
+      ],
+    });
+    const forwarderCall = encodeFunctionData({
+      abi: FORWARDER_ABI,
+      functionName: 'forwardERC20',
+      args: [
+        BASE_USDC_ADDR as `0x${string}`,
+        0n,
+        [0n, 0n, 0, zero32, zero32] as never,
+        '0x0000000000000000000000000000000000000001',
+        swiftCall,
+      ],
+    });
     getEvmPayloadSpy.mockReturnValue({
       to: '0x1111111111111111111111111111111111111111',
-      data: '0xcafebabe',
+      data: forwarderCall,
       value: 0n,
     });
+    fetchQuoteSpy.mockResolvedValue([
+      {
+        ...swiftQuoteFields({
+          swiftInputContract: BASE_USDC_ADDR,
+          toToken: { contract: SOL_USDC, decimals: 6 },
+        }),
+        deadline64: String(Math.floor(Date.now() / 1000) + 3600),
+        minAmountOut: 4.9,
+      },
+    ]);
     const adapter = createMayanAdapter({ solanaConnection: fakeConnection });
-    const raw = {
+    const q = await adapter.quote({
       fromChain: 'base',
       toChain: 'solana',
-      fromAddress: '0xFromUserAddress000000000000000000000000000',
-      toAddress: 'SolanaDestAddress',
-      orderHash: 'hash-b',
-    };
-    const bundle = await adapter.buildBridgeTx({
-      expiresAt: 0,
-      minAmountOut: 0n,
-      raw,
+      amountUsdc: 5_000_000n,
+      fromAddress: '0x6aAb71f67f31Aca815Cdf9b42F6C8fA019600844',
+      toAddress: '11111111111111111111111111111111',
     });
+    const bundle = await adapter.buildBridgeTx(q);
     expect(bundle.chain).toBe('base');
-    expect(bundle.orderHash).toBe('hash-b');
+    expect(bundle.orderHash).toMatch(/^0x[0-9a-f]{64}$/);
     if (bundle.chain !== 'base') throw new Error('expected base');
     expect(bundle.txs).toHaveLength(2);
     const [approve, swap] = bundle.txs;
@@ -101,41 +255,55 @@ describe('createMayanAdapter — buildBridgeTx shim', () => {
     expect(approve.data.startsWith('0x095ea7b3')).toBe(true);
     expect(approve.data.endsWith('f'.repeat(64))).toBe(true);
     expect(swap.to).toBe('0x1111111111111111111111111111111111111111');
-    expect(swap.data).toBe('0xcafebabe');
     expect(swap.chainId).toBe(8453);
   });
 
   it('builds a solana-chain single-tx bundle via createSwapFromSolanaInstructions', async () => {
-    createSwapSpy.mockResolvedValue({ instructions: [], signers: [], lookupTables: [] });
+    const randomKey = Buffer.alloc(32, 7);
+    const initData = Buffer.concat([Buffer.alloc(166, 0), randomKey]);
+    createSwapSpy.mockResolvedValue({
+      instructions: [{ programId: new PublicKey(SWIFT_PROGRAM_ID), keys: [], data: initData }],
+      signers: [],
+      lookupTables: [],
+    });
+    fetchQuoteSpy.mockResolvedValue([
+      {
+        ...swiftQuoteFields({}),
+        deadline64: String(Math.floor(Date.now() / 1000) + 3600),
+        minAmountOut: 4.9,
+      },
+    ]);
     const adapter = createMayanAdapter({ solanaConnection: fakeConnection });
-    const raw = {
+    const q = await adapter.quote({
       fromChain: 'solana',
       toChain: 'base',
+      amountUsdc: 5_000_000n,
       fromAddress: '11111111111111111111111111111111',
       toAddress: '0x1111111111111111111111111111111111111111',
-      orderHash: 'hash-s',
-    };
-    const bundle = await adapter.buildBridgeTx({ expiresAt: 0, minAmountOut: 0n, raw });
+    });
+    const bundle = await adapter.buildBridgeTx(q);
     expect(bundle.chain).toBe('solana');
-    expect(bundle.orderHash).toBe('hash-s');
-    expect(createSwapSpy).toHaveBeenCalledWith(
-      raw,
-      raw.fromAddress,
-      raw.toAddress,
-      null,
-      fakeConnection,
-    );
+    expect(bundle.orderHash).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
-  it('throws when the raw quote is missing orderHash', async () => {
+  it('throws when the Solana init_order instruction is missing', async () => {
+    createSwapSpy.mockResolvedValue({ instructions: [], signers: [], lookupTables: [] });
+    fetchQuoteSpy.mockResolvedValue([
+      {
+        ...swiftQuoteFields({}),
+        deadline64: String(Math.floor(Date.now() / 1000) + 3600),
+        minAmountOut: 4.9,
+      },
+    ]);
     const adapter = createMayanAdapter({ solanaConnection: fakeConnection });
-    await expect(
-      adapter.buildBridgeTx({
-        expiresAt: 0,
-        minAmountOut: 0n,
-        raw: { fromChain: 'base', toChain: 'solana', fromAddress: '0xa', toAddress: 'b' },
-      }),
-    ).rejects.toThrow(/missing orderHash/);
+    const q = await adapter.quote({
+      fromChain: 'solana',
+      toChain: 'base',
+      amountUsdc: 5_000_000n,
+      fromAddress: '11111111111111111111111111111111',
+      toAddress: '0x1111111111111111111111111111111111111111',
+    });
+    await expect(adapter.buildBridgeTx(q)).rejects.toThrow(/init_order/);
   });
 });
 

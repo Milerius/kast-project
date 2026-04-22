@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@kast/shared": "workspace:*",
-    "@mayanfinance/swap-sdk": "9.8.0",
+    "@mayanfinance/swap-sdk": "13.3.0",
     "@solana/web3.js": "1.95.4",
     "viem": "2.21.34"
   },

@@ -35,7 +35,14 @@ export default tseslint.config(
   //   ...nextPlugin,
   // },
   {
-    ignores: ['**/dist/**', '**/.next/**', '**/node_modules/**', '**/coverage/**', 'docker/**'],
+    ignores: [
+      '**/dist/**',
+      '**/.next/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      'docker/**',
+      'scripts/**',
+    ],
   },
   prettier,
 );

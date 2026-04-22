@@ -1,17 +1,32 @@
-import { VersionedTransaction, TransactionMessage, PublicKey } from '@solana/web3.js';
-import type { BridgeTxBundle, Quote } from './adapter.js';
+import { VersionedTransaction, TransactionMessage, PublicKey, type Signer } from '@solana/web3.js';
+import type { BridgeRoute, BridgeTxBundle, EvmTransactionRequest, Quote } from './adapter.js';
+import {
+  computeSwiftOrderHash,
+  extractEvmRandomKey,
+  extractSolanaRandomKey,
+  type SwiftHashableQuote,
+} from './order-hash.js';
 
-type RawQuote = { fromChain: 'solana' | 'base'; toChain: 'solana' | 'base' };
+type RawQuote = SwiftHashableQuote & {
+  type?: string;
+  swiftVersion?: 'V1' | 'V2';
+  fromChain: 'solana' | 'base';
+  toChain: 'solana' | 'base';
+};
+
+type SolanaIx = {
+  programId: PublicKey;
+  data: Buffer | Uint8Array;
+};
 
 type SdkLike = {
   createSwapFromSolanaInstructions: (
     quote: unknown,
     fromAddress: string,
     toAddress: string,
-    referrer: Record<string, string> | null,
-    connection: unknown,
+    referrer: string | null,
   ) => Promise<{
-    instructions: unknown[];
+    instructions: ReadonlyArray<SolanaIx>;
     signers: unknown[];
     lookupTables: unknown[];
   }>;
@@ -19,37 +34,40 @@ type SdkLike = {
     quote: unknown,
     fromAddress: string,
     toAddress: string,
-    referrer: Record<string, string> | null,
+    referrer: string | null,
     chainId: number,
-    rpc: unknown,
-    permit: unknown,
   ) =>
-    | {
-        approve: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
-        swap: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
-      }
-    | Promise<{
-        approve: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
-        swap: { to: `0x${string}`; data: `0x${string}`; value: bigint; chainId: number };
-      }>;
-  deriveOrderHash: (quote: unknown) => string;
+    | { approve: EvmTransactionRequest; swap: EvmTransactionRequest }
+    | Promise<{ approve: EvmTransactionRequest; swap: EvmTransactionRequest }>;
 };
+
+function routeOf(raw: RawQuote): BridgeRoute {
+  return raw.type === 'SWIFT' ? 'SWIFT' : 'FAST_MCTP';
+}
+
+// Our hash extraction & keccak layout only match Swift V1. V2 uses a
+// different calldata selector + 272-byte order struct. We track orders by
+// source tx signature anyway (Mayan explorer indexes by sig), so it's safe
+// to skip the hash when it's not computable.
+function canComputeOrderHash(raw: RawQuote): boolean {
+  return raw.type === 'SWIFT' && raw.swiftVersion !== 'V2';
+}
 
 export async function buildBridgeTx(
   sdk: SdkLike,
   quote: Quote,
   addresses: { fromAddress: string; toAddress: string },
+  referrer: string | null = null,
 ): Promise<BridgeTxBundle> {
   const raw = quote.raw as RawQuote;
-  const orderHash = sdk.deriveOrderHash(raw);
+  const route = routeOf(raw);
 
   if (raw.fromChain === 'solana') {
-    const { instructions, lookupTables } = await sdk.createSwapFromSolanaInstructions(
+    const { instructions, signers, lookupTables } = await sdk.createSwapFromSolanaInstructions(
       raw,
       addresses.fromAddress,
       addresses.toAddress,
-      null,
-      null,
+      referrer,
     );
     const message = new TransactionMessage({
       payerKey: new PublicKey(addresses.fromAddress),
@@ -57,21 +75,38 @@ export async function buildBridgeTx(
       instructions: instructions as never,
     }).compileToV0Message(lookupTables as never);
     const tx = new VersionedTransaction(message);
-    return { chain: 'solana', txs: [tx], orderHash };
+    const extraSigners = signers as Signer[];
+    if (route === 'SWIFT' && canComputeOrderHash(raw)) {
+      const randomKeyHex = extractSolanaRandomKey(instructions);
+      const orderHash = computeSwiftOrderHash(
+        raw,
+        addresses.fromAddress,
+        addresses.toAddress,
+        referrer,
+        randomKeyHex,
+      );
+      return { chain: 'solana', route, txs: [tx], extraSigners, orderHash };
+    }
+    return { chain: 'solana', route, txs: [tx], extraSigners };
   }
 
   const payload = await sdk.getSwapFromEvmTxPayload(
     raw,
     addresses.fromAddress,
     addresses.toAddress,
-    null,
+    referrer,
     8453,
-    null,
-    null,
   );
-  return {
-    chain: 'base',
-    txs: [payload.approve, payload.swap],
-    orderHash,
-  };
+  if (route === 'SWIFT' && canComputeOrderHash(raw)) {
+    const randomKeyHex = extractEvmRandomKey(payload.swap.data);
+    const orderHash = computeSwiftOrderHash(
+      raw,
+      addresses.fromAddress,
+      addresses.toAddress,
+      referrer,
+      randomKeyHex,
+    );
+    return { chain: 'base', route, txs: [payload.approve, payload.swap], orderHash };
+  }
+  return { chain: 'base', route, txs: [payload.approve, payload.swap] };
 }

@@ -1,4 +1,4 @@
-import type { Connection, VersionedTransaction } from '@solana/web3.js';
+import type { Connection, PublicKey, Signer, VersionedTransaction } from '@solana/web3.js';
 import { encodeFunctionData, erc20Abi } from 'viem';
 import {
   fetchQuote,
@@ -24,12 +24,26 @@ export interface EvmTransactionRequest {
   chainId: number;
 }
 
+export type BridgeRoute = 'SWIFT' | 'FAST_MCTP';
+
 export type BridgeTxBundle =
-  | { chain: 'solana'; txs: [VersionedTransaction]; orderHash: string }
+  | {
+      chain: 'solana';
+      route: BridgeRoute;
+      txs: [VersionedTransaction];
+      // Ephemeral signers the SDK requires to co-sign the bridge tx alongside
+      // the user wallet (e.g. the payload writer keypair for FAST_MCTP).
+      // Empty for routes that don't need extra signers.
+      extraSigners: Signer[];
+      // Present for SWIFT (computed pre-broadcast). FAST_MCTP has no equivalent;
+      // callers track by source tx signature post-broadcast.
+      orderHash?: string;
+    }
   | {
       chain: 'base';
+      route: BridgeRoute;
       txs: [EvmTransactionRequest, EvmTransactionRequest];
-      orderHash: string;
+      orderHash?: string;
     };
 
 export interface MayanAdapter {
@@ -41,7 +55,15 @@ export interface MayanAdapter {
     toAddress: string;
   }): Promise<Quote>;
   buildBridgeTx(quote: Quote): Promise<BridgeTxBundle>;
-  getOrderStatus(orderHash: string): Promise<OrderStatus>;
+  /**
+   * Poll the Mayan explorer for order status.
+   *
+   * NOTE: The Mayan public explorer (`/v3/swap/trx/:hash`) only indexes by the
+   * *source tx signature* (the Solana sig or EVM tx hash of the bridge-out tx),
+   * NOT by the Swift orderHash. Callers must pass the sig returned from
+   * broadcasting the bridge tx, not the orderHash computed pre-broadcast.
+   */
+  getOrderStatus(sourceSig: string): Promise<OrderStatus>;
 }
 
 export interface MayanAdapterConfig {
@@ -52,7 +74,7 @@ export interface MayanAdapterConfig {
 const EXPLORER_STATUS_URL = 'https://explorer-api.mayan.finance/v3/swap/trx';
 const MAX_UINT256 = (1n << 256n) - 1n;
 
-type RawEvmQuote = {
+type RawAddressedQuote = {
   fromAddress: string;
   toAddress: string;
   fromChain: 'solana' | 'base';
@@ -92,7 +114,7 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
       quote: unknown,
       fromAddress: string,
       toAddress: string,
-      _referrer: Record<string, string> | null,
+      _referrer: string | null,
     ) => {
       const res = await createSwapFromSolanaInstructions(
         quote as never,
@@ -102,20 +124,24 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
         config.solanaConnection,
       );
       return {
-        instructions: res.instructions,
+        instructions: res.instructions as ReadonlyArray<{
+          programId: PublicKey;
+          data: Buffer | Uint8Array;
+        }>,
         signers: res.signers,
         lookupTables: res.lookupTables,
       };
     },
 
-    getSwapFromEvmTxPayload: (
+    getSwapFromEvmTxPayload: async (
       quote: unknown,
       fromAddress: string,
       toAddress: string,
-      _referrer: Record<string, string> | null,
+      _referrer: string | null,
       chainId: number,
     ) => {
-      const tx = getSwapFromEvmTxPayload(
+      // SDK 13.x: getSwapFromEvmTxPayload returns Promise<TransactionRequest>.
+      const tx = await getSwapFromEvmTxPayload(
         quote as never,
         fromAddress,
         toAddress,
@@ -144,17 +170,28 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
       return { approve, swap };
     },
 
-    fetchStatus: async (orderHash: string): Promise<{ clientStatus: string }> => {
+    fetchStatus: async (
+      orderHash: string,
+    ): Promise<{
+      clientStatus: string;
+      status?: string;
+      completedAt?: string | null;
+      refundTxHash?: string | null;
+    }> => {
       const res = await fetch(`${EXPLORER_STATUS_URL}/${orderHash}`);
       if (!res.ok) throw new Error(`Mayan status ${res.status} for ${orderHash}`);
-      const json = (await res.json()) as { clientStatus?: string };
-      return { clientStatus: json.clientStatus ?? 'ORDER_IN_PROGRESS' };
-    },
-
-    deriveOrderHash: (q: unknown) => {
-      const hash = (q as { orderHash?: string }).orderHash;
-      if (!hash) throw new Error('Mayan quote missing orderHash');
-      return hash;
+      const json = (await res.json()) as {
+        clientStatus?: string;
+        status?: string;
+        completedAt?: string | null;
+        refundTxHash?: string | null;
+      };
+      return {
+        clientStatus: json.clientStatus ?? 'ORDER_IN_PROGRESS',
+        ...(json.status !== undefined && { status: json.status }),
+        ...(json.completedAt !== undefined && { completedAt: json.completedAt }),
+        ...(json.refundTxHash !== undefined && { refundTxHash: json.refundTxHash }),
+      };
     },
   };
 
@@ -162,11 +199,13 @@ export function createMayanAdapter(config: MayanAdapterConfig): MayanAdapter {
     quote: (p) =>
       quoteImpl(sdk, { ...p, ...(config.referrer !== undefined && { referrer: config.referrer }) }),
     buildBridgeTx: (q) => {
-      const raw = q.raw as RawEvmQuote;
-      return buildBridgeTxImpl(sdk, q, {
-        fromAddress: raw.fromAddress,
-        toAddress: raw.toAddress,
-      });
+      const raw = q.raw as RawAddressedQuote;
+      return buildBridgeTxImpl(
+        sdk,
+        q,
+        { fromAddress: raw.fromAddress, toAddress: raw.toAddress },
+        null,
+      );
     },
     getOrderStatus: (h) => getOrderStatusImpl(sdk, h),
   };

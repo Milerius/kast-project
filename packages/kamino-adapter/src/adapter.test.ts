@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 
 const { loadSpy, getObligationSpy, depositSpy, borrowSpy, repaySpy, withdrawSpy } = vi.hoisted(
   () => ({
@@ -14,6 +14,7 @@ const { loadSpy, getObligationSpy, depositSpy, borrowSpy, repaySpy, withdrawSpy 
 
 vi.mock('@kamino-finance/klend-sdk', () => ({
   KaminoMarket: { load: loadSpy },
+  KaminoAction: { tag: 'kamino-action-static' },
   VanillaObligation: class FakeVanillaObligation {
     constructor(public readonly programId: unknown) {}
   },
@@ -27,9 +28,15 @@ vi.mock('./tx-withdraw.js', () => ({ buildWithdrawCollateralTx: withdrawSpy }));
 
 import { createKaminoAdapter } from './adapter.js';
 
-const connection = new Connection('http://localhost:8899');
 const marketAddress = new PublicKey('7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF');
 const owner = new PublicKey('11111111111111111111111111111111');
+const fakeProgramId = new PublicKey('KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD');
+
+function makeConnection() {
+  return {
+    getSlot: vi.fn().mockResolvedValue(777_000),
+  } as never;
+}
 
 describe('createKaminoAdapter', () => {
   beforeEach(() => {
@@ -42,7 +49,7 @@ describe('createKaminoAdapter', () => {
   });
 
   it('loads the market once and forwards every call to the matching impl', async () => {
-    const fakeMarket = { programId: owner };
+    const fakeMarket = { programId: fakeProgramId };
     loadSpy.mockResolvedValue(fakeMarket);
     getObligationSpy.mockResolvedValue(null);
     depositSpy.mockResolvedValue(['deposit-tx']);
@@ -50,6 +57,7 @@ describe('createKaminoAdapter', () => {
     repaySpy.mockResolvedValue(['repay-tx']);
     withdrawSpy.mockResolvedValue(['withdraw-tx']);
 
+    const connection = makeConnection();
     const adapter = createKaminoAdapter({ connection, marketAddress });
 
     const obl = await adapter.getObligation(owner);
@@ -69,16 +77,31 @@ describe('createKaminoAdapter', () => {
       expect.objectContaining({ market: fakeMarket, owner }),
     );
     expect(depositSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ market: fakeMarket, owner, lamports: 1_000_000_000n }),
+      expect.objectContaining({
+        connection,
+        market: fakeMarket,
+        owner,
+        lamports: 1_000_000_000n,
+        kaminoAction: { tag: 'kamino-action-static' },
+      }),
     );
+    const depositArg = depositSpy.mock.calls[0]?.[0] as { obligation: { programId: PublicKey } };
+    expect(depositArg.obligation.programId).toBe(fakeProgramId);
+
     expect(borrowSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ market: fakeMarket, owner, amountUsdc: 5_000_000n }),
+      expect.objectContaining({ connection, market: fakeMarket, owner, amountUsdc: 5_000_000n }),
     );
     expect(repaySpy).toHaveBeenCalledWith(
-      expect.objectContaining({ market: fakeMarket, owner, amount: 'all' }),
+      expect.objectContaining({
+        connection,
+        market: fakeMarket,
+        owner,
+        amount: 'all',
+        currentSlot: 777_000,
+      }),
     );
     expect(withdrawSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ market: fakeMarket, owner, lamports: 'all' }),
+      expect.objectContaining({ connection, market: fakeMarket, owner, lamports: 'all' }),
     );
   });
 });

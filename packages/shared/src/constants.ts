@@ -9,7 +9,7 @@ export const KAMINO_MAIN_MARKET = '7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF'
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export const USDC_BASE_UNITS = 1_000_000n; // USDC has 6 decimals on both chains
 
-export const TARGET_COLLATERAL_USD = 20;
+export const TARGET_COLLATERAL_USD = 18;
 export const DEFAULT_BORROW_USDC_UNITS = 5n * USDC_BASE_UNITS; // 5 USDC
 
 export const BASE_ETH_GAS_THRESHOLD_WEI = 1_000_000_000_000_000n; // 0.001 ETH

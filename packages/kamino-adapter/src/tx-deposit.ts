@@ -1,28 +1,43 @@
-import type { PublicKey, VersionedTransaction } from '@solana/web3.js';
+import { PublicKey, type TransactionInstruction, type VersionedTransaction } from '@solana/web3.js';
 import { SOLANA_SOL_MINT } from '@kast/shared';
+import { compileV0, type BlockhashSource } from './compile-v0.js';
 
-// Thin wrapper around what the klend-sdk exposes at runtime. The concrete
-// helper used is `KaminoAction.buildDepositTxns`; we inject a market-like
-// object that exposes the helper so we can mock it in tests.
-export type DepositBuilder = (args: {
-  owner: PublicKey;
-  amount: bigint;
-  mint: string;
-}) => Promise<VersionedTransaction[]>;
-
-export type MarketForDeposit = {
-  buildDepositTxns: DepositBuilder;
-};
+export interface KaminoActionStaticsDeposit {
+  buildDepositTxns: (
+    market: unknown,
+    amount: string,
+    mint: PublicKey,
+    owner: PublicKey,
+    obligation: unknown,
+    useV2Ixs: boolean,
+    scopeRefreshConfig: undefined,
+  ) => Promise<unknown>;
+  actionToIxs: (action: unknown) => TransactionInstruction[];
+}
 
 export async function buildDepositCollateralTx(args: {
-  market: MarketForDeposit;
+  connection: BlockhashSource;
+  kaminoAction: KaminoActionStaticsDeposit;
+  market: unknown;
+  obligation: unknown;
   owner: PublicKey;
   lamports: bigint;
 }): Promise<VersionedTransaction[]> {
   if (args.lamports <= 0n) throw new Error('amount must be positive');
-  return args.market.buildDepositTxns({
-    owner: args.owner,
-    amount: args.lamports,
-    mint: SOLANA_SOL_MINT,
+  const action = await args.kaminoAction.buildDepositTxns(
+    args.market,
+    args.lamports.toString(),
+    new PublicKey(SOLANA_SOL_MINT),
+    args.owner,
+    args.obligation,
+    true,
+    undefined,
+  );
+  const ixs = args.kaminoAction.actionToIxs(action);
+  const tx = await compileV0({
+    connection: args.connection,
+    payer: args.owner,
+    instructions: ixs,
   });
+  return [tx];
 }
