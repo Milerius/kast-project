@@ -1,0 +1,19 @@
+{
+  "name": "scenario-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "NODE_OPTIONS='--import tsx/esm' cucumber-js --import 'orchestrator/**/*.ts' features/",
+    "test:live": "NODE_OPTIONS='--import tsx/esm' cucumber-js --import 'live/**/*.ts' --tags '@live' features/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kast/orchestrator": "workspace:*",
+    "@kast/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "11.0.1",
+    "tsx": "4.19.1",
+    "typescript": "5.6.3"
+  }
+}
