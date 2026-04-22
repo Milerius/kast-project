@@ -278,22 +278,31 @@ async function main(): Promise<void> {
     const start = Date.now();
     let last: string = '';
     const timeoutMs = 15 * 60 * 1000;
+    let settled = false;
     while (Date.now() - start < timeoutMs) {
+      let s: string;
       try {
-        const s = await mayan.getOrderStatus(trackingSig);
-        if (s !== last) {
-          console.log(`  status=${s} (t+${Math.round((Date.now() - start) / 1000)}s)`);
-          last = s;
-        }
-        if (s === 'SETTLED') break;
-        if (s === 'REFUNDED') throw new Error('bridge was refunded');
+        s = await mayan.getOrderStatus(trackingSig);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (!msg.includes('404')) console.log(`  status fetch err: ${msg}`);
+        await new Promise((r) => setTimeout(r, 5000));
+        continue;
       }
+      if (s !== last) {
+        console.log(`  status=${s} (t+${Math.round((Date.now() - start) / 1000)}s)`);
+        last = s;
+      }
+      if (s === 'SETTLED') {
+        settled = true;
+        break;
+      }
+      // Let REFUNDED escape the outer try/catch so the run fails loudly
+      // instead of timing out 15 minutes later.
+      if (s === 'REFUNDED') throw new Error('bridge was refunded');
       await new Promise((r) => setTimeout(r, 5000));
     }
-    if (last !== 'SETTLED') throw new Error(`bridge-in did not settle in time (last=${last})`);
+    if (!settled) throw new Error(`bridge-in did not settle in time (last=${last})`);
     const afterUsdc = await solanaUsdcBalance(connection, solOwner);
     console.log(
       `  Sol USDC after: ${fmtUsdc(afterUsdc)} USDC (Δ ${fmtUsdc(afterUsdc - solUsdcAta)})`,
