@@ -3,7 +3,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { createKaminoAdapter } from '@kast/kamino-adapter';
 import { KAMINO_MAIN_MARKET } from '@kast/shared';
 
-const rpc = process.env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
+const rpc = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
 describe.skipIf(!process.env.KAST_INTEGRATION)('Kamino live', () => {
   it('loads main market and getObligation returns null for fresh pubkey', async () => {
