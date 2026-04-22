@@ -25,4 +25,6 @@ jobs:
       - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r --filter './packages/*' exec vitest run --coverage
+      # `packages/shared` has no test files yet — without --passWithNoTests
+      # the recursive runner errors out and the whole job fails.
+      - run: pnpm -r --filter './packages/*' exec vitest run --coverage --passWithNoTests
