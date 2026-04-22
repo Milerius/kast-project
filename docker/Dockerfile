@@ -9,6 +9,16 @@ COPY scenario-tests/package.json scenario-tests/
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
+# Next.js 15.5 statically prerenders routes at build time. The app's env guard
+# throws at module eval when NEXT_PUBLIC_PRIVY_APP_ID is missing, so we need
+# something (anything) set during the build. Real values are injected via the
+# runtime `environment:` block in docker-compose.
+ARG NEXT_PUBLIC_PRIVY_APP_ID=build-placeholder
+ARG NEXT_PUBLIC_SOLANA_RPC_URL=https://build.invalid
+ARG NEXT_PUBLIC_BASE_RPC_URL=https://build.invalid
+ENV NEXT_PUBLIC_PRIVY_APP_ID=${NEXT_PUBLIC_PRIVY_APP_ID} \
+    NEXT_PUBLIC_SOLANA_RPC_URL=${NEXT_PUBLIC_SOLANA_RPC_URL} \
+    NEXT_PUBLIC_BASE_RPC_URL=${NEXT_PUBLIC_BASE_RPC_URL}
 COPY . .
 RUN pnpm --filter @kast/web build
 

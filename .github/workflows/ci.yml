@@ -24,4 +24,13 @@ jobs:
       - run: pnpm test:unit
       - run: pnpm test:property
       - run: pnpm test:bdd
+      # Next.js 15.5 statically prerenders /_not-found, which boots the
+      # Privy provider and reads NEXT_PUBLIC_PRIVY_APP_ID. Supply dummy values
+      # so the production build (which runs without a real `.env.local`) can
+      # complete — these never reach runtime since the compiled bundle just
+      # needs SOMETHING to satisfy the `required()` guard at module eval.
       - run: pnpm build
+        env:
+          NEXT_PUBLIC_PRIVY_APP_ID: ci-placeholder
+          NEXT_PUBLIC_SOLANA_RPC_URL: https://ci.invalid
+          NEXT_PUBLIC_BASE_RPC_URL: https://ci.invalid
