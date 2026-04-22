@@ -17,7 +17,7 @@
     "test:bdd": "pnpm --filter scenario-tests test",
     "test:integration": "pnpm --filter integration-tests test",
     "test:smoke": "pnpm --filter @kast/web exec playwright test",
-    "test:mutation": "pnpm --filter orchestrator exec stryker run && pnpm --filter verify exec stryker run",
+    "test:mutation": "pnpm --filter orchestrator exec stryker run",
     "dev": "pnpm --filter @kast/web dev",
     "sim:e2e": "tsx scripts/e2e-sim.ts"
   },

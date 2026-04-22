@@ -6,7 +6,7 @@ describe.skipIf(!process.env.KAST_INTEGRATION)('Mayan live', () => {
   it('fetches a live quote for 5 USDC sol→base', async () => {
     const mayan = createMayanAdapter({
       solanaConnection: new Connection(
-        process.env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com',
+        process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
       ),
     });
     const q = await mayan.quote({

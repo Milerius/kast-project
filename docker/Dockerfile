@@ -23,6 +23,7 @@ COPY . .
 RUN pnpm --filter @kast/web build
 
 FROM node:20.17-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 COPY --from=build /repo /app
 WORKDIR /app/apps/web
