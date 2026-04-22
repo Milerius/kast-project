@@ -13,7 +13,7 @@ FROM deps AS build
 # throws at module eval when NEXT_PUBLIC_PRIVY_APP_ID is missing, so we need
 # something (anything) set during the build. Real values are injected via the
 # runtime `environment:` block in docker-compose.
-ARG NEXT_PUBLIC_PRIVY_APP_ID=build-placeholder
+ARG NEXT_PUBLIC_PRIVY_APP_ID=clpkbuildplaceholder00000
 ARG NEXT_PUBLIC_SOLANA_RPC_URL=https://build.invalid
 ARG NEXT_PUBLIC_BASE_RPC_URL=https://build.invalid
 ENV NEXT_PUBLIC_PRIVY_APP_ID=${NEXT_PUBLIC_PRIVY_APP_ID} \

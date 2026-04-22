@@ -31,6 +31,9 @@ jobs:
       # needs SOMETHING to satisfy the `required()` guard at module eval.
       - run: pnpm build
         env:
-          NEXT_PUBLIC_PRIVY_APP_ID: ci-placeholder
+          # Privy validates the app-ID format at provider init (25-char id
+          # starting with "cl"). Use a well-formed fake so prerender succeeds;
+          # real value is injected at runtime.
+          NEXT_PUBLIC_PRIVY_APP_ID: clpkcicicicicicicicicicici
           NEXT_PUBLIC_SOLANA_RPC_URL: https://ci.invalid
           NEXT_PUBLIC_BASE_RPC_URL: https://ci.invalid

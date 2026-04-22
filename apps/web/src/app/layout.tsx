@@ -5,6 +5,13 @@ import { inter, ibmMono } from './fonts.js';
 
 export const metadata = { title: 'KAST DeFi' };
 
+// The PrivyProvider validates NEXT_PUBLIC_PRIVY_APP_ID at client-module
+// evaluation; with Next.js 15.5 the default static prerender would try to
+// initialize it at build time using whatever placeholder CI supplies, which
+// fails. Nothing in this app is statically deriveable anyway (every page is
+// auth- or wallet-gated), so force dynamic rendering across the tree.
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
